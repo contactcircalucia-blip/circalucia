@@ -6,23 +6,40 @@ import { formatINR, getProducts, type Product } from "@/lib/products";
 
 export default function Header() {
   const [count, setCount] = useState(0);
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoaded, setProductsLoaded] = useState(false);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  /* =========================================
+     CART COUNT
+  ========================================= */
 
   useEffect(() => {
     const update = () => {
       try {
-        const cart = JSON.parse(localStorage.getItem("cl-cart") || "[]");
+        const cart = JSON.parse(
+          localStorage.getItem("cl-cart") || "[]"
+        );
 
         setCount(
           cart.reduce(
-            (sum: number, item: { qty: number }) => sum + item.qty,
+            (
+              sum: number,
+              item: {
+                qty: number;
+              }
+            ) => sum + item.qty,
             0
           )
         );
-      } catch {}
+      } catch {
+        setCount(0);
+      }
     };
 
     update();
@@ -36,17 +53,46 @@ export default function Header() {
     };
   }, []);
 
+  /* =========================================
+     LOAD PRODUCTS WHEN SEARCH OPENS
+  ========================================= */
+
   useEffect(() => {
     if (!searchOpen || productsLoaded) return;
 
     const loadProducts = async () => {
-      const data = await getProducts();
-      setProducts(data);
-      setProductsLoaded(true);
+      try {
+        const data = await getProducts();
+
+        setProducts(data);
+        setProductsLoaded(true);
+      } catch (error) {
+        console.error("Unable to load products:", error);
+      }
     };
 
     loadProducts();
   }, [searchOpen, productsLoaded]);
+
+  /* =========================================
+     STOP BODY SCROLL WHEN MOBILE MENU IS OPEN
+  ========================================= */
+
+  useEffect(() => {
+    if (menuOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [menuOpen]);
+
+  /* =========================================
+     SEARCH
+  ========================================= */
 
   const query = searchQuery.trim().toLowerCase();
 
@@ -70,36 +116,106 @@ export default function Header() {
           .slice(0, 5)
       : [];
 
+  /* =========================================
+     CLOSE MOBILE MENU
+  ========================================= */
+
+  const closeMobileMenu = () => {
+    setMenuOpen(false);
+  };
+
   return (
     <header className="site-header">
+      {/* =====================================
+          MAIN HEADER
+      ====================================== */}
+
       <div className="header-inner">
-        <button className="menu-button" aria-label="Open menu">
-          ☰
+        {/* MOBILE HAMBURGER */}
+
+        <button
+          type="button"
+          className="menu-button"
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          aria-controls="mobile-navigation"
+          onClick={() => {
+            setMenuOpen((current) => !current);
+
+            if (searchOpen) {
+              setSearchOpen(false);
+              setSearchQuery("");
+            }
+          }}
+        >
+          {menuOpen ? "×" : "☰"}
         </button>
 
-        <Link href="/" className="wordmark">
+        {/* LOGO */}
+
+        <Link
+          href="/"
+          className="wordmark"
+          onClick={closeMobileMenu}
+        >
           CIRCA LUCIA
         </Link>
 
+        {/* =====================================
+            DESKTOP NAVIGATION
+        ====================================== */}
+
         <nav className="desktop-nav">
-          <Link href="/#collection">Collection</Link>
-          <Link href="/#maison">Maison</Link>
-          <Link href="/#bespoke">Bespoke</Link>
-          <Link href="/#journal">Journal</Link>
-          <Link href="/#about">About us</Link>
+          <Link href="/#collection">
+            Collection
+          </Link>
+
+          <Link href="/#maison">
+            Maison
+          </Link>
+
+          <Link href="/#bespoke">
+            Bespoke
+          </Link>
+
+          <Link href="/#journal">
+            Journal
+          </Link>
+
+          <Link href="/#about">
+            About us
+          </Link>
         </nav>
 
+        {/* =====================================
+            RIGHT HEADER ACTIONS
+        ====================================== */}
+
         <div className="header-actions">
+          {/* SEARCH BUTTON */}
+
           <button
             type="button"
             className="header-icon-button"
-            aria-label={searchOpen ? "Close search" : "Open search"}
-            title={searchOpen ? "Close search" : "Search"}
+            aria-label={
+              searchOpen
+                ? "Close search"
+                : "Open search"
+            }
+            title={
+              searchOpen
+                ? "Close search"
+                : "Search"
+            }
             onClick={() => {
-              setSearchOpen(!searchOpen);
+              setSearchOpen((current) => !current);
 
               if (searchOpen) {
                 setSearchQuery("");
+              }
+
+              if (menuOpen) {
+                setMenuOpen(false);
               }
             }}
           >
@@ -115,15 +231,19 @@ export default function Header() {
               aria-hidden="true"
             >
               <circle cx="11" cy="11" r="7" />
+
               <path d="m20 20-4-4" />
             </svg>
           </button>
 
+          {/* SAVED DESIGNS */}
+
           <Link
-             href="/saved-designs"
-             className="header-icon-button"
-             aria-label="Saved designs"
-             title="Saved designs"
+            href="/saved-designs"
+            className="header-icon-button"
+            aria-label="Saved designs"
+            title="Saved designs"
+            onClick={closeMobileMenu}
           >
             <svg
               width="20"
@@ -140,19 +260,109 @@ export default function Header() {
             </svg>
           </Link>
 
-          <Link href="/account" aria-label="Account">
+          {/* ACCOUNT */}
+
+          <Link
+            href="/account"
+            aria-label="Account"
+            onClick={closeMobileMenu}
+          >
             Account
           </Link>
 
-          <Link href="/cart" aria-label="Shopping bag">
+          {/* BAG */}
+
+          <Link
+            href="/cart"
+            aria-label="Shopping bag"
+            onClick={closeMobileMenu}
+          >
             Bag ({count})
           </Link>
         </div>
       </div>
 
+      {/* =====================================
+          MOBILE NAVIGATION
+      ====================================== */}
+
+      <div
+        id="mobile-navigation"
+        className={`mobile-navigation ${
+          menuOpen
+            ? "mobile-navigation-open"
+            : ""
+        }`}
+      >
+        <nav className="mobile-navigation-links">
+          <Link
+            href="/#collection"
+            onClick={closeMobileMenu}
+          >
+            Collection
+          </Link>
+
+          <Link
+            href="/#maison"
+            onClick={closeMobileMenu}
+          >
+            Maison
+          </Link>
+
+          <Link
+            href="/#bespoke"
+            onClick={closeMobileMenu}
+          >
+            Bespoke
+          </Link>
+
+          <Link
+            href="/#journal"
+            onClick={closeMobileMenu}
+          >
+            Journal
+          </Link>
+
+          <Link
+            href="/#about"
+            onClick={closeMobileMenu}
+          >
+            About us
+          </Link>
+
+          <Link
+            href="/account"
+            onClick={closeMobileMenu}
+          >
+            Account
+          </Link>
+
+          <Link
+            href="/saved-designs"
+            onClick={closeMobileMenu}
+          >
+            Saved designs
+          </Link>
+
+          <Link
+            href="/cart"
+            onClick={closeMobileMenu}
+          >
+            Bag ({count})
+          </Link>
+        </nav>
+      </div>
+
+      {/* =====================================
+          SEARCH PANEL
+      ====================================== */}
+
       {searchOpen && (
         <div className="header-search">
-          <form action="/collection" method="GET">
+          <form
+            action="/collection"
+            method="GET"
+          >
             <div className="header-search-input-wrap">
               <input
                 type="search"
@@ -160,7 +370,11 @@ export default function Header() {
                 placeholder="Search footwear..."
                 aria-label="Search footwear"
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
+                onChange={(event) =>
+                  setSearchQuery(
+                    event.target.value
+                  )
+                }
                 autoFocus
               />
 
@@ -169,7 +383,9 @@ export default function Header() {
                   type="button"
                   className="header-search-clear"
                   aria-label="Clear search"
-                  onClick={() => setSearchQuery("")}
+                  onClick={() =>
+                    setSearchQuery("")
+                  }
                 >
                   ×
                 </button>
@@ -185,6 +401,10 @@ export default function Header() {
             </button>
           </form>
 
+          {/* =================================
+              SEARCH RESULTS
+          ================================== */}
+
           {query.length > 0 && (
             <div className="search-suggestions">
               {suggestions.length > 0 ? (
@@ -193,46 +413,64 @@ export default function Header() {
                     Matching designs
                   </p>
 
-                  {suggestions.map((product) => (
-                    <Link
-                      key={product.id}
-                      href={`/product/${product.slug}`}
-                      className="search-suggestion"
-                      onClick={() => {
-                        setSearchOpen(false);
-                        setSearchQuery("");
-                      }}
-                    >
-                      <div className="search-suggestion-image">
-                        {product.image_url ? (
-                          <img
-                            src={product.image_url}
-                            alt={product.name}
-                          />
-                        ) : (
-                          <span>CIRCA LUCIA</span>
-                        )}
-                      </div>
+                  {suggestions.map(
+                    (product) => (
+                      <Link
+                        key={product.id}
+                        href={`/product/${product.slug}`}
+                        className="search-suggestion"
+                        onClick={() => {
+                          setSearchOpen(false);
+                          setSearchQuery("");
+                        }}
+                      >
+                        <div className="search-suggestion-image">
+                          {product.image_url ? (
+                            <img
+                              src={
+                                product.image_url
+                              }
+                              alt={
+                                product.name
+                              }
+                            />
+                          ) : (
+                            <span>
+                              CIRCA LUCIA
+                            </span>
+                          )}
+                        </div>
 
-                      <div className="search-suggestion-info">
-                        <strong>{product.name}</strong>
+                        <div className="search-suggestion-info">
+                          <strong>
+                            {product.name}
+                          </strong>
 
-                        <span>
-                          {product.collection || "Circa Lucia"}
-                        </span>
-                      </div>
+                          <span>
+                            {product.collection ||
+                              "Circa Lucia"}
+                          </span>
+                        </div>
 
-                      <strong className="search-suggestion-price">
-                        {formatINR(product.price)}
-                      </strong>
-                    </Link>
-                  ))}
+                        <strong className="search-suggestion-price">
+                          {formatINR(
+                            product.price
+                          )}
+                        </strong>
+                      </Link>
+                    )
+                  )}
                 </>
               ) : (
                 <div className="search-no-results">
-                  <p>No matching designs found.</p>
+                  <p>
+                    No matching designs
+                    found.
+                  </p>
+
                   <span>
-                    Try searching by name, collection, or material.
+                    Try searching by name,
+                    collection, or material.
                   </span>
                 </div>
               )}
