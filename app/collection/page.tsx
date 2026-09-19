@@ -1,12 +1,17 @@
-
 import Link from "next/link";
 import Image from "next/image";
-import { getProducts, formatINR, getProductImage } from "@/lib/products";
+import { getProducts, formatINR } from "@/lib/products";
 
 type CollectionProps = {
   searchParams: Promise<{
     q?: string | string[];
   }>;
+};
+
+const productImages: Record<string, string> = {
+  luciana: "/products/luciana.jpeg",
+  celeste: "/products/celeste.jpeg",
+  aurora: "/products/aurora.jpeg",
 };
 
 export default async function Collection({ searchParams }: CollectionProps) {
@@ -18,8 +23,9 @@ export default async function Collection({ searchParams }: CollectionProps) {
 
   const filteredProducts = query
     ? products.filter((p) =>
-        [p.name, p.collection, p.slug]
-          .some((value) => String(value ?? "").toLowerCase().includes(query))
+        [p.name, p.collection, p.slug].some((value) =>
+          String(value ?? "").toLowerCase().includes(query)
+        )
       )
     : products;
 
@@ -60,7 +66,17 @@ export default async function Collection({ searchParams }: CollectionProps) {
             key={p.id}
           >
             <div className="product-placeholder">
-              <span>{p.name}</span>
+              {productImages[p.slug] ? (
+                <Image
+                  src={productImages[p.slug]}
+                  alt={p.name}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 33vw"
+                  className="object-cover"
+                />
+              ) : (
+                <span>{p.name}</span>
+              )}
             </div>
 
             <div className="product-meta">
