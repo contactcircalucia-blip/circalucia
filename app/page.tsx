@@ -1,12 +1,19 @@
 import Link from "next/link";
 import Image from "next/image";
-import { getProducts, formatINR, getProductImage } from "@/lib/products";
+import {
+  getProducts,
+  formatINR,
+  getProductImage,
+} from "@/lib/products";
 
 export default async function Home() {
   const products = await getProducts();
 
   return (
     <>
+      {/* =====================================================
+          HERO
+      ===================================================== */}
       <section className="hero">
         <div className="hero-overlay">
           <p className="eyebrow">THE HOUSE OF CIRCA LUCIA</p>
@@ -18,7 +25,8 @@ export default async function Home() {
           </h1>
 
           <p className="hero-copy">
-            Designed in-house. Crafted to order. Made for the woman who refuses ordinary.
+            Designed in-house. Crafted to order. Made for the woman who refuses
+            ordinary.
           </p>
 
           <div className="hero-actions">
@@ -33,6 +41,9 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* =====================================================
+          PHILOSOPHY
+      ===================================================== */}
       <section className="intro section">
         <p className="eyebrow">THE CIRCA LUCIA PHILOSOPHY</p>
 
@@ -49,10 +60,14 @@ export default async function Home() {
         </p>
       </section>
 
+      {/* =====================================================
+          COLLECTION
+      ===================================================== */}
       <section className="collection-preview section" id="collection">
         <div className="section-heading">
           <div>
             <p className="eyebrow">THE COLLECTION</p>
+
             <h2>Designed to be remembered.</h2>
           </div>
 
@@ -62,41 +77,56 @@ export default async function Home() {
         </div>
 
         <div className="product-grid">
-          {products.map((p) => (
-            <Link
-              className="product-card"
-              href={`/product/${p.slug}`}
-              key={p.slug}
-            >
-              <div className="product-placeholder">
-                {getProductImage(p) ? (
-                  <Image
-                    src={getProductImage(p)!}
-                    alt={p.name}
-                    fill
-                    sizes="(max-width: 900px) 100vw, 33vw"
-                    className="product-image"
-                  />
-                ) : (
-                  <span>{p.name}</span>
-                )}
-              </div>
+          {products.map((p) => {
+            const productImage = getProductImage(p);
 
-              <div className="product-meta">
-                <div>
-                  <h3>{p.name}</h3>
-                  <p>{p.collection}</p>
+            return (
+              <Link
+                className="product-card"
+                href={`/product/${p.slug}`}
+                key={p.slug}
+              >
+                <div className="product-placeholder">
+                  {productImage ? (
+                    <Image
+                      src={productImage}
+                      alt={p.name}
+                      fill
+                      sizes="(max-width: 900px) 100vw, 33vw"
+                      className="product-image"
+                    />
+                  ) : (
+                    <span>{p.name}</span>
+                  )}
                 </div>
 
-                <strong>{formatINR(p.price)}</strong>
-              </div>
-            </Link>
-          ))}
+                <div className="product-meta">
+                  <div>
+                    <h3>{p.name}</h3>
+                    <p>{p.collection}</p>
+                  </div>
+
+                  <strong>{formatINR(p.price)}</strong>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </section>
 
+      {/* =====================================================
+          MAISON / ART OF THE PAIR
+      ===================================================== */}
       <section className="split-feature" id="maison">
-        <div className="feature-image dark-panel">
+        <div
+          className="feature-image dark-panel"
+          style={{
+            backgroundImage: "url('/art-of-the-pair.jpg')",
+            backgroundSize: "cover",
+            backgroundPosition: "center center",
+            backgroundRepeat: "no-repeat",
+          }}
+        >
           <span>THE ART OF THE PAIR</span>
         </div>
 
@@ -119,6 +149,9 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* =====================================================
+          BESPOKE
+      ===================================================== */}
       <section className="bespoke-banner" id="bespoke">
         <p className="eyebrow">YOUR VISION, OUR CRAFT</p>
 
@@ -133,32 +166,98 @@ export default async function Home() {
         </Link>
       </section>
 
+      {/* =====================================================
+          JOURNAL
+      ===================================================== */}
       <section className="journal section" id="journal">
         <p className="eyebrow">THE JOURNAL</p>
 
         <h2>Inside the world of Circa Lucia.</h2>
 
         <div className="journal-grid">
+          {/* CRAFT */}
           <article>
-            <div className="journal-image">01</div>
+            <div
+              className="journal-image"
+              style={{
+                position: "relative",
+                overflow: "hidden",
+              }}
+            >
+              <Image
+                src="/craft.jpg"
+                alt="Circa Lucia craftsmanship"
+                fill
+                sizes="(max-width: 900px) 100vw, 33vw"
+                style={{
+                  objectFit: "cover",
+                  objectPosition: "center center",
+                }}
+              />
+            </div>
+
             <p>CRAFT</p>
+
             <h3>The anatomy of a signature heel.</h3>
           </article>
 
+          {/* STYLE */}
           <article>
-            <div className="journal-image">02</div>
+            <div
+              className="journal-image"
+              style={{
+                position: "relative",
+                overflow: "hidden",
+              }}
+            >
+              <Image
+                src="/style.jpg"
+                alt="Circa Lucia signature style"
+                fill
+                sizes="(max-width: 900px) 100vw, 33vw"
+                style={{
+                  objectFit: "cover",
+                  objectPosition: "center center",
+                }}
+              />
+            </div>
+
             <p>STYLE</p>
+
             <h3>Why the right silhouette changes everything.</h3>
           </article>
 
+          {/* MAISON */}
           <article>
-            <div className="journal-image">03</div>
+            <div
+              className="journal-image"
+              style={{
+                position: "relative",
+                overflow: "hidden",
+              }}
+            >
+              <Image
+                src="/maison.jpg"
+                alt="The Maison of Circa Lucia"
+                fill
+                sizes="(max-width: 900px) 100vw, 33vw"
+                style={{
+                  objectFit: "cover",
+                  objectPosition: "center center",
+                }}
+              />
+            </div>
+
             <p>MAISON</p>
+
             <h3>From sketch to the final pair.</h3>
           </article>
         </div>
       </section>
 
+      {/* =====================================================
+          ABOUT
+      ===================================================== */}
       <section className="about-section section" id="about">
         <div className="about-inner">
           <div className="about-heading">
