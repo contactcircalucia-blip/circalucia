@@ -63,6 +63,17 @@ export async function getProductVariants(productId: string) {
   return data;
 }
 
+
+export function getProductImage(product: Pick<Product, "name" | "slug">) {
+  const key = `${product.name} ${product.slug}`.toLowerCase();
+
+  if (key.includes("luciana")) return "/products/luciana.jpeg";
+  if (key.includes("celeste") || key.includes("celesta")) return "/products/celeste.jpeg";
+  if (key.includes("aurora")) return "/products/aurora.jpeg";
+
+  return null;
+}
+
 export function formatINR(value: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",

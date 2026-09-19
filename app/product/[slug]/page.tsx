@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
+import Image from "next/image";
 import {
   getProduct,
   getProductVariants,
   formatINR,
+  getProductImage,
 } from "@/lib/products";
 import ProductPurchase from "@/components/ProductPurchase";
 import SaveDesignButton from "@/components/SaveDesignButton";
@@ -25,7 +27,17 @@ export default async function ProductPage({
   return (
     <section className="product-page section">
       <div className="product-visual">
-        <span>{product.name}</span>
+        {getProductImage(product) ? (
+          <Image
+            src={getProductImage(product)!}
+            alt={product.name}
+            fill
+            sizes="(max-width: 900px) 100vw, 55vw"
+            className="product-image"
+          />
+        ) : (
+          <span>{product.name}</span>
+        )}
       </div>
 
       <div className="product-detail">

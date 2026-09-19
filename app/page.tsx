@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { getProducts, formatINR } from "@/lib/products";
+import { getProducts, formatINR, getProductImage } from "@/lib/products";
 
 export default async function Home() {
   const products = await getProducts();
@@ -69,7 +69,17 @@ export default async function Home() {
               key={p.slug}
             >
               <div className="product-placeholder">
-                <span>{p.name}</span>
+                {getProductImage(p) ? (
+                  <Image
+                    src={getProductImage(p)!}
+                    alt={p.name}
+                    fill
+                    sizes="(max-width: 900px) 100vw, 33vw"
+                    className="product-image"
+                  />
+                ) : (
+                  <span>{p.name}</span>
+                )}
               </div>
 
               <div className="product-meta">

@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -11,7 +10,6 @@ export default function Header() {
   const [searchQuery, setSearchQuery] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoaded, setProductsLoaded] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const update = () => {
@@ -72,23 +70,14 @@ export default function Header() {
           .slice(0, 5)
       : [];
 
-  const closeMenu = () => setMenuOpen(false);
-
   return (
     <header className="site-header">
       <div className="header-inner">
-        <button
-          type="button"
-          className="menu-button"
-          aria-label={menuOpen ? "Close menu" : "Open menu"}
-          aria-expanded={menuOpen}
-          aria-controls="mobile-navigation"
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          {menuOpen ? "×" : "☰"}
+        <button className="menu-button" aria-label="Open menu">
+          ☰
         </button>
 
-        <Link href="/" className="wordmark" onClick={closeMenu}>
+        <Link href="/" className="wordmark">
           CIRCA LUCIA
         </Link>
 
@@ -112,8 +101,6 @@ export default function Header() {
               if (searchOpen) {
                 setSearchQuery("");
               }
-
-              setMenuOpen(false);
             }}
           >
             <svg
@@ -133,10 +120,10 @@ export default function Header() {
           </button>
 
           <Link
-            href="/saved-designs"
-            className="header-icon-button"
-            aria-label="Saved designs"
-            title="Saved designs"
+             href="/saved-designs"
+             className="header-icon-button"
+             aria-label="Saved designs"
+             title="Saved designs"
           >
             <svg
               width="20"
@@ -162,39 +149,6 @@ export default function Header() {
           </Link>
         </div>
       </div>
-
-      {menuOpen && (
-        <nav
-          id="mobile-navigation"
-          className="mobile-nav"
-          aria-label="Mobile navigation"
-        >
-          <Link href="/#collection" onClick={closeMenu}>
-            Collection
-          </Link>
-          <Link href="/#maison" onClick={closeMenu}>
-            Maison
-          </Link>
-          <Link href="/#bespoke" onClick={closeMenu}>
-            Bespoke
-          </Link>
-          <Link href="/#journal" onClick={closeMenu}>
-            Journal
-          </Link>
-          <Link href="/#about" onClick={closeMenu}>
-            About us
-          </Link>
-          <Link href="/account" onClick={closeMenu}>
-            Account
-          </Link>
-          <Link href="/saved-designs" onClick={closeMenu}>
-            Saved designs
-          </Link>
-          <Link href="/cart" onClick={closeMenu}>
-            Shopping bag ({count})
-          </Link>
-        </nav>
-      )}
 
       {searchOpen && (
         <div className="header-search">

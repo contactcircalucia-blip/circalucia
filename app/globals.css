@@ -238,6 +238,8 @@ PRODUCTS
 }
 
 .product-placeholder {
+  position: relative;
+  overflow: hidden;
   aspect-ratio: 4 / 5;
   background: linear-gradient(145deg, #ddd5c9, #f4eee6);
   display: flex;
@@ -245,6 +247,15 @@ PRODUCTS
   padding: 25px;
   font-family: "Cormorant Garamond", serif;
   font-size: 30px;
+}
+
+.product-image {
+  object-fit: cover;
+  transition: transform 0.5s ease;
+}
+
+.product-card:hover .product-image {
+  transform: scale(1.03);
 }
 
 .product-meta {
@@ -416,6 +427,8 @@ PRODUCT PAGE
 }
 
 .product-visual {
+  position: relative;
+  overflow: hidden;
   aspect-ratio: 4 / 5;
   background: linear-gradient(145deg, #d8cec0, #f6f0e8);
   display: flex;
@@ -2454,267 +2467,4 @@ ADMIN — MOBILE
   .order-history-entry > span {
     white-space: normal;
   }
-}
-/* =========================================================
-   ADMIN ORDER MANAGEMENT V2
-   ========================================================= */
-
-.admin-orders-toolbar {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 28px;
-}
-
-.admin-orders-toolbar h2 {
-  margin-bottom: 6px;
-}
-
-.admin-orders-toolbar p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.admin-order-filters {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.admin-order-filters input,
-.admin-order-filters select {
-  min-height: 42px;
-  box-sizing: border-box;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  background: var(--paper);
-  color: var(--ink);
-  font: inherit;
-}
-
-.admin-order-filters input {
-  min-width: 220px;
-}
-
-.admin-order-filters select {
-  min-width: 170px;
-}
-
-.admin-order-summary {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-top: 20px;
-  padding: 16px 0;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-}
-
-.admin-order-summary div {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.admin-order-summary span {
-  color: var(--muted);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.admin-order-summary strong {
-  font-size: 14px;
-  word-break: break-word;
-}
-
-.admin-order-details-toggle {
-  width: 100%;
-  margin-top: 18px;
-  padding: 14px 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 0;
-  border-top: 1px solid var(--line);
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-
-.admin-order-details-toggle:hover {
-  opacity: 0.7;
-}
-
-.admin-order-details {
-  padding: 4px 0 20px;
-}
-
-.admin-detail-section {
-  padding: 22px 0;
-  border-top: 1px solid var(--line);
-}
-
-.admin-detail-section:first-child {
-  border-top: 0;
-}
-
-.admin-detail-section p:not(.eyebrow) {
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.admin-detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 40px;
-}
-
-.admin-items-list {
-  border-top: 1px solid var(--line);
-}
-
-.admin-item-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.admin-item-row strong {
-  display: block;
-}
-
-.admin-item-row p {
-  margin: 5px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.admin-address {
-  color: var(--muted);
-  line-height: 1.7;
-}
-
-.admin-total-lines {
-  max-width: 420px;
-}
-
-.admin-total-lines > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.admin-total-lines span {
-  color: var(--muted);
-}
-
-.admin-total-lines strong {
-  text-align: right;
-}
-
-@media (max-width: 800px) {
-  .admin-orders-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .admin-order-filters {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .admin-order-filters input,
-  .admin-order-filters select {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .admin-order-summary {
-    grid-template-columns: 1fr;
-  }
-
-  .admin-detail-grid {
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-}
-
-@media (max-width: 600px) {
-  .admin-item-row {
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .admin-item-row > strong {
-    text-align: left;
-  }
-}
-
-/* Circa Lucia mobile navigation */
-.mobile-nav {
-  display: none;
-}
-
-@media (max-width: 768px) {
-  .mobile-nav {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    padding: 12px 24px 20px;
-    background: var(--paper, #faf8f4);
-    border-top: 1px solid var(--line, #d9d0c4);
-    position: relative;
-    z-index: 100;
-  }
-
-  .mobile-nav a {
-    display: block;
-    padding: 14px 0;
-    color: var(--ink, #141210);
-    text-decoration: none;
-    font-size: 15px;
-    border-bottom: 1px solid var(--line, #d9d0c4);
-  }
-
-  .mobile-nav a:last-child {
-    border-bottom: none;
-  }
-
-  .menu-button {
-    cursor: pointer;
-    border: none;
-    background: transparent;
-    color: var(--ink, #141210);
-    font-size: 26px;
-    line-height: 1;
-    padding: 8px;
-  }
-}
-
-/* Circa Lucia — bespoke banner contrast fix */
-.bespoke-banner {
-  color: #faf8f4;
-}
-
-.bespoke-banner .eyebrow,
-.bespoke-banner h2,
-.bespoke-banner h2 em {
-  color: #faf8f4;
-}
-
-.bespoke-banner .button,
-.bespoke-banner .button-light {
-  color: #141210;
-  background-color: #faf8f4;
-  border-color: #faf8f4;
 }

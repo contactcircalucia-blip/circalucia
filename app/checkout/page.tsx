@@ -314,109 +314,8 @@ export default function Checkout() {
         return;
       }
 
-      /*
-       * The order has been successfully created.
-       */
-      const createdOrder =
-        data as OrderResult;
+      setOrder(data as OrderResult);
 
-      console.log(
-        "CHECKOUT: Order created, starting email request",
-        createdOrder
-      );
-
-      setOrder(createdOrder);
-
-      /*
-       * Send the order confirmation email.
-       *
-       * IMPORTANT:
-       * If the email fails, the order remains
-       * successfully created.
-       */
-      const {
-        data: sessionData,
-      } =
-        await supabase.auth.getSession();
-
-      const accessToken =
-        sessionData.session
-          ?.access_token;
-
-      console.log(
-        "CHECKOUT: Session checked",
-        {
-          hasAccessToken:
-            Boolean(accessToken),
-          orderId:
-            createdOrder.order_id,
-        }
-      );
-
-      if (accessToken) {
-        try {
-          console.log(
-            "CHECKOUT: Calling order confirmation email API"
-          );
-
-          const emailResponse =
-            await fetch(
-              "/api/email/order-confirmation",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type":
-                    "application/json",
-                },
-                body: JSON.stringify({
-                  orderId:
-                    createdOrder.order_id,
-                  accessToken:
-                    accessToken,
-                }),
-              }
-            );
-
-          console.log(
-            "CHECKOUT: Email API response",
-            emailResponse.status
-          );
-
-          const emailResult =
-            await emailResponse.json();
-
-          console.log(
-            "CHECKOUT: Email API result",
-            emailResult
-          );
-
-          if (!emailResponse.ok) {
-            console.error(
-              "Order confirmation email failed:",
-              emailResult
-            );
-          } else {
-            console.log(
-              "Order confirmation email sent successfully:",
-              emailResult
-            );
-          }
-        } catch (emailError) {
-          console.error(
-            "Unable to send order confirmation email:",
-            emailError
-          );
-        }
-      } else {
-        console.error(
-          "CHECKOUT: Unable to send order confirmation email: No access token found."
-        );
-      }
-
-      /*
-       * Clear the cart only after the order
-       * has been successfully created.
-       */
       localStorage.removeItem(
         "cl-cart"
       );
@@ -470,24 +369,17 @@ export default function Checkout() {
           style={{
             marginTop: "28px",
             padding: "22px",
-            border:
-              "1px solid #d9d0c4",
-            background:
-              "#faf8f4",
+            border: "1px solid #d9d0c4",
+            background: "#faf8f4",
           }}
         >
           <p
             style={{
-              margin:
-                "0 0 8px",
-              color:
-                "#716b64",
-              fontSize:
-                "11px",
-              letterSpacing:
-                "0.08em",
-              textTransform:
-                "uppercase",
+              margin: "0 0 8px",
+              color: "#716b64",
+              fontSize: "11px",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
             }}
           >
             Order number
@@ -495,10 +387,8 @@ export default function Checkout() {
 
           <strong
             style={{
-              fontSize:
-                "20px",
-              letterSpacing:
-                "0.04em",
+              fontSize: "20px",
+              letterSpacing: "0.04em",
             }}
           >
             {order.order_number}
@@ -508,8 +398,7 @@ export default function Checkout() {
         <p
           className="small-note"
           style={{
-            marginTop:
-              "22px",
+            marginTop: "22px",
           }}
         >
           Your order is currently
@@ -523,13 +412,10 @@ export default function Checkout() {
 
         <div
           style={{
-            display:
-              "flex",
+            display: "flex",
             gap: "12px",
-            flexWrap:
-              "wrap",
-            marginTop:
-              "28px",
+            flexWrap: "wrap",
+            marginTop: "28px",
           }}
         >
           <Link
@@ -552,8 +438,7 @@ export default function Checkout() {
 
   if (
     errorMessage &&
-    (!userId ||
-      cart.length === 0)
+    (!userId || cart.length === 0)
   ) {
     return (
       <section className="section">
@@ -603,8 +488,7 @@ export default function Checkout() {
 
         <div
           style={{
-            marginTop:
-              "28px",
+            marginTop: "28px",
           }}
         >
           <input
@@ -698,10 +582,8 @@ export default function Checkout() {
             }
             rows={4}
             style={{
-              resize:
-                "vertical",
-              minHeight:
-                "110px",
+              resize: "vertical",
+              minHeight: "110px",
             }}
           />
         </div>
@@ -709,20 +591,13 @@ export default function Checkout() {
         {errorMessage && (
           <div
             style={{
-              marginTop:
-                "18px",
-              padding:
-                "14px 16px",
-              border:
-                "1px solid #7a263a",
-              background:
-                "#faf8f4",
-              color:
-                "#7a263a",
-              fontSize:
-                "13px",
-              lineHeight:
-                1.5,
+              marginTop: "18px",
+              padding: "14px 16px",
+              border: "1px solid #7a263a",
+              background: "#faf8f4",
+              color: "#7a263a",
+              fontSize: "13px",
+              lineHeight: 1.5,
             }}
           >
             {errorMessage}
@@ -741,12 +616,9 @@ export default function Checkout() {
 
         <div
           style={{
-            display:
-              "flex",
-            flexDirection:
-              "column",
-            gap:
-              "16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
           }}
         >
           {cart.map(
@@ -754,14 +626,11 @@ export default function Checkout() {
               <div
                 key={`${item.slug}-${item.variantId ?? "default"}-${index}`}
                 style={{
-                  display:
-                    "flex",
+                  display: "flex",
                   justifyContent:
                     "space-between",
-                  gap:
-                    "18px",
-                  fontSize:
-                    "13px",
+                  gap: "18px",
+                  fontSize: "13px",
                 }}
               >
                 <div>
@@ -780,8 +649,7 @@ export default function Checkout() {
                           "11px",
                       }}
                     >
-                      Size{" "}
-                      {item.size}
+                      Size {item.size}
                     </p>
                   )}
 
@@ -813,12 +681,9 @@ export default function Checkout() {
 
         <div
           style={{
-            height:
-              "1px",
-            background:
-              "#d9d0c4",
-            margin:
-              "22px 0",
+            height: "1px",
+            background: "#d9d0c4",
+            margin: "22px 0",
           }}
         />
 
@@ -868,12 +733,9 @@ export default function Checkout() {
 
         <div
           style={{
-            height:
-              "1px",
-            background:
-              "#d9d0c4",
-            margin:
-              "22px 0",
+            height: "1px",
+            background: "#d9d0c4",
+            margin: "22px 0",
           }}
         />
 
@@ -892,8 +754,7 @@ export default function Checkout() {
         <p
           className="small-note"
           style={{
-            marginTop:
-              "14px",
+            marginTop: "14px",
           }}
         >
           Payment is not connected
@@ -906,22 +767,16 @@ export default function Checkout() {
           type="button"
           className="button button-dark"
           onClick={placeOrder}
-          disabled={
-            placingOrder
-          }
+          disabled={placingOrder}
           style={{
-            width:
-              "100%",
-            marginTop:
-              "20px",
-            opacity:
-              placingOrder
-                ? 0.6
-                : 1,
-            cursor:
-              placingOrder
-                ? "wait"
-                : "pointer",
+            width: "100%",
+            marginTop: "20px",
+            opacity: placingOrder
+              ? 0.6
+              : 1,
+            cursor: placingOrder
+              ? "wait"
+              : "pointer",
           }}
         >
           {placingOrder
@@ -932,16 +787,11 @@ export default function Checkout() {
         <Link
           href="/cart"
           style={{
-            display:
-              "block",
-            marginTop:
-              "14px",
-            textAlign:
-              "center",
-            color:
-              "#716b64",
-            fontSize:
-              "12px",
+            display: "block",
+            marginTop: "14px",
+            textAlign: "center",
+            color: "#716b64",
+            fontSize: "12px",
             textDecoration:
               "underline",
             textUnderlineOffset:

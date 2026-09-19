@@ -1,6 +1,7 @@
 
 import Link from "next/link";
-import { getProducts, formatINR } from "@/lib/products";
+import Image from "next/image";
+import { getProducts, formatINR, getProductImage } from "@/lib/products";
 
 type CollectionProps = {
   searchParams: Promise<{

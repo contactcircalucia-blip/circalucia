@@ -54,162 +54,6 @@ export default function Account() {
     });
   }, []);
 
-  async function sendWelcomeEmail() {
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const accessToken = session?.access_token;
-
-      if (!accessToken) {
-        return false;
-      }
-
-      const response = await fetch(
-        "/api/email/account-event",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            accessToken,
-            event: "welcome",
-          }),
-        }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        console.error(
-          "Welcome email failed:",
-          result
-        );
-
-        return false;
-      }
-
-      console.log(
-        "Circa Lucia welcome email sent successfully."
-      );
-
-      return true;
-    } catch (error) {
-      console.error(
-        "Welcome email request failed:",
-        error
-      );
-
-      return false;
-    }
-  }
-
-  async function sendLoginEmail() {
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const accessToken = session?.access_token;
-
-      if (!accessToken) {
-        console.error(
-          "Login notification email skipped: no access token."
-        );
-
-        return false;
-      }
-
-      const response = await fetch(
-        "/api/email/account-event",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            accessToken,
-            event: "login",
-          }),
-        }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        console.error(
-          "Login notification email failed:",
-          result
-        );
-
-        return false;
-      }
-
-      console.log(
-        "Circa Lucia login notification sent successfully."
-      );
-
-      return true;
-    } catch (error) {
-      console.error(
-        "Login notification email request failed:",
-        error
-      );
-
-      return false;
-    }
-  }
-
-  async function handleAuthenticatedSession(
-    sessionUser: {
-      id: string;
-      email?: string;
-      user_metadata?: {
-        full_name?: string;
-        phone?: string;
-      };
-    }
-  ) {
-    setUserEmail(sessionUser.email || "");
-
-    const { data: profileData, error: profileError } =
-      await supabase
-        .from("profiles")
-        .select("full_name, phone")
-        .eq("id", sessionUser.id)
-        .single();
-
-    if (profileError) {
-      console.error(profileError);
-    } else {
-      setProfile(profileData);
-    }
-
-    await loadOrders(sessionUser.id);
-
-    /*
-     * If this browser has a pending welcome email from a
-     * newly created account, send it now that the user
-     * has an authenticated session.
-     */
-    if (
-      typeof window !== "undefined" &&
-      localStorage.getItem(
-        "circa_lucia_pending_welcome"
-      ) === "true"
-    ) {
-      const sent = await sendWelcomeEmail();
-
-      if (sent) {
-        localStorage.removeItem(
-          "circa_lucia_pending_welcome"
-        );
-      }
-    }
-  }
-
   useEffect(() => {
     async function loadSession() {
       const {
@@ -219,9 +63,22 @@ export default function Account() {
       setLogged(!!session);
 
       if (session?.user) {
-        await handleAuthenticatedSession(
-          session.user
-        );
+        setUserEmail(session.user.email || "");
+
+        const { data: profileData, error: profileError } =
+          await supabase
+            .from("profiles")
+            .select("full_name, phone")
+            .eq("id", session.user.id)
+            .single();
+
+        if (profileError) {
+          console.error(profileError);
+        } else {
+          setProfile(profileData);
+        }
+
+        await loadOrders(session.user.id);
       }
     }
 
@@ -234,9 +91,22 @@ export default function Account() {
         setLogged(!!session);
 
         if (session?.user) {
-          await handleAuthenticatedSession(
-            session.user
-          );
+          setUserEmail(session.user.email || "");
+
+          const { data: profileData, error: profileError } =
+            await supabase
+              .from("profiles")
+              .select("full_name, phone")
+              .eq("id", session.user.id)
+              .single();
+
+          if (profileError) {
+            console.error(profileError);
+          } else {
+            setProfile(profileData);
+          }
+
+          await loadOrders(session.user.id);
         } else {
           setOrders([]);
           setProfile(null);
@@ -285,11 +155,10 @@ export default function Account() {
     setMessage("");
     setShowWrongCredentials(false);
 
-    const { data, error } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     if (error) {
       console.error(error);
@@ -298,16 +167,6 @@ export default function Account() {
       setShowWrongCredentials(true);
 
       return;
-    }
-
-    /*
-     * Login was successful.
-     *
-     * Supabase has created an authenticated session.
-     * Send the Circa Lucia login notification email.
-     */
-    if (data.session) {
-      await sendLoginEmail();
     }
 
     setLoading(false);
@@ -337,26 +196,15 @@ export default function Account() {
 
     const fullPhone = `+${getCountryCallingCode(country)}${phone}`;
 
-    /*
-     * Secure phone-number duplicate check.
-     *
-     * We do NOT query the profiles table directly because
-     * anonymous users are not allowed to SELECT from profiles.
-     *
-     * The SECURITY DEFINER RPC only returns true/false.
-     */
-    const {
-      data: phoneRegistered,
-      error: phoneCheckError,
-    } = await supabase.rpc("is_phone_registered", {
-      p_phone: fullPhone,
-    });
+    const { data: existingProfile, error: phoneCheckError } =
+      await supabase
+        .from("profiles")
+        .select("id")
+        .eq("phone", fullPhone)
+        .maybeSingle();
 
     if (phoneCheckError) {
-      console.error(
-        "Phone check error:",
-        phoneCheckError
-      );
+      console.error(phoneCheckError);
 
       setError(
         "Unable to verify the phone number. Please try again."
@@ -366,7 +214,7 @@ export default function Account() {
       return;
     }
 
-    if (phoneRegistered === true) {
+    if (existingProfile) {
       setError(
         "This mobile number is already registered. Please sign in instead."
       );
@@ -428,25 +276,6 @@ export default function Account() {
 
           setLoading(false);
           return;
-        }
-
-        /*
-         * A session already exists, so the user is authenticated.
-         * Send the welcome email immediately.
-         */
-        await sendWelcomeEmail();
-      } else {
-        /*
-         * Email confirmation is enabled in Supabase.
-         * Remember that this is a new signup so that once
-         * the user becomes authenticated, the welcome email
-         * can be sent.
-         */
-        if (typeof window !== "undefined") {
-          localStorage.setItem(
-            "circa_lucia_pending_welcome",
-            "true"
-          );
         }
       }
     }
