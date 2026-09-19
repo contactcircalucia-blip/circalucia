@@ -239,14 +239,14 @@ PRODUCTS
 
 .product-placeholder {
   position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
   overflow: hidden;
-  aspect-ratio: 4 / 5;
-  background: linear-gradient(145deg, #ddd5c9, #f4eee6);
-  display: flex;
-  align-items: end;
-  padding: 25px;
-  font-family: "Cormorant Garamond", serif;
-  font-size: 30px;
+  background: #f4f1ec;
+}
+
+.product-placeholder img {
+  object-fit: cover;
 }
 
 .product-image {

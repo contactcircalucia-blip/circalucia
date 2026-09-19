@@ -1,6 +1,10 @@
 import Link from "next/link";
 import Image from "next/image";
-import { getProducts, formatINR } from "@/lib/products";
+import {
+  getProducts,
+  formatINR,
+  getProductImage,
+} from "@/lib/products";
 
 type CollectionProps = {
   searchParams: Promise<{
@@ -8,13 +12,9 @@ type CollectionProps = {
   }>;
 };
 
-const productImages: Record<string, string> = {
-  luciana: "/products/luciana.jpeg",
-  celeste: "/products/celeste.jpeg",
-  aurora: "/products/aurora.jpeg",
-};
-
-export default async function Collection({ searchParams }: CollectionProps) {
+export default async function Collection({
+  searchParams,
+}: CollectionProps) {
   const products = await getProducts();
   const params = await searchParams;
 
@@ -44,6 +44,7 @@ export default async function Collection({ searchParams }: CollectionProps) {
           <p>
             Showing results for <strong>“{rawQuery}”</strong>
           </p>
+
           <Link href="/collection" className="text-link">
             Clear search
           </Link>
@@ -59,36 +60,40 @@ export default async function Collection({ searchParams }: CollectionProps) {
       </div>
 
       <div className="product-grid product-grid-large">
-        {filteredProducts.map((p) => (
-          <Link
-            className="product-card"
-            href={`/product/${p.slug}`}
-            key={p.id}
-          >
-            <div className="product-placeholder">
-              {productImages[p.slug] ? (
-                <Image
-                  src={productImages[p.slug]}
-                  alt={p.name}
-                  fill
-                  sizes="(max-width: 768px) 100vw, 33vw"
-                  className="object-cover"
-                />
-              ) : (
-                <span>{p.name}</span>
-              )}
-            </div>
+        {filteredProducts.map((p) => {
+          const image = getProductImage(p);
 
-            <div className="product-meta">
-              <div>
-                <h3>{p.name}</h3>
-                <p>{p.collection}</p>
+          return (
+            <Link
+              className="product-card"
+              href={`/product/${p.slug}`}
+              key={p.id}
+            >
+              <div className="product-placeholder">
+                {image ? (
+                  <Image
+                    src={image}
+                    alt={p.name}
+                    fill
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                    className="object-cover"
+                  />
+                ) : (
+                  <span>{p.name}</span>
+                )}
               </div>
 
-              <strong>{formatINR(p.price)}</strong>
-            </div>
-          </Link>
-        ))}
+              <div className="product-meta">
+                <div>
+                  <h3>{p.name}</h3>
+                  <p>{p.collection}</p>
+                </div>
+
+                <strong>{formatINR(p.price)}</strong>
+              </div>
+            </Link>
+          );
+        })}
       </div>
 
       {filteredProducts.length === 0 && (
