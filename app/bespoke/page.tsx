@@ -111,7 +111,7 @@ export default function Bespoke() {
     );
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [country]);
 
   function handlePhoneChange(value: string) {
     const digitsOnly = value.replace(/\D/g, "");
@@ -195,7 +195,7 @@ export default function Bespoke() {
           status: "SUBMITTED",
         })
         .select(
-          "request_number"
+          "id, request_number"
         )
         .single();
 
@@ -213,12 +213,59 @@ export default function Bespoke() {
       return;
     }
 
+    const generatedRequestNumber =
+      data?.request_number || "";
+
     setRequestNumber(
-      data?.request_number || ""
+      generatedRequestNumber
     );
 
     setSent(true);
     setLoading(false);
+
+    /*
+     * Send bespoke confirmation emails.
+     *
+     * Email failure does NOT affect the successfully
+     * submitted bespoke request.
+     */
+    try {
+      const {
+        data: sessionData,
+      } = await supabase.auth.getSession();
+
+      const accessToken =
+        sessionData.session?.access_token;
+
+      if (accessToken && data?.id) {
+        const emailResponse = await fetch(
+          "/api/email/bespoke-request",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              requestId: data.id,
+              accessToken,
+            }),
+          }
+        );
+
+        if (!emailResponse.ok) {
+          console.error(
+            "Bespoke email request failed:",
+            await emailResponse.text()
+          );
+        }
+      }
+    } catch (emailError) {
+      console.error(
+        "Bespoke email error:",
+        emailError
+      );
+    }
   }
 
   return (

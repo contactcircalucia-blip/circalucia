@@ -1,0 +1,30 @@
+CIRCA LUCIA MERGED PROJECT — 20 Sep 2026
+
+Merge policy:
+- Functional/backend baseline: circa-lucia.zip
+- Visual/design source: bash.zip
+- Master handover requirements preserved
+
+Design files intentionally applied from bash.zip:
+- app/globals.css
+- app/page.tsx
+- app/collection/page.tsx
+- app/product/[slug]/page.tsx
+- components/Header.tsx
+- lib/products.ts (adds product-image mapping required by redesigned pages)
+- public design/product image assets
+
+Functional files intentionally preserved from the baseline because the bash.zip copies were older and removed newer functionality:
+- app/account/page.tsx
+- app/admin/page.tsx
+- app/bespoke/page.tsx
+- app/checkout/page.tsx
+- app/api/email/order-status/route.ts
+- account order pages and other backend/API files
+- package.json/package-lock.json baseline versions
+
+V2 handover change applied:
+- app/admin/customers/page.tsx: removed expanded-header initials/avatar and “Selected customer” label; retained customer name, joined date, controls and backend logic.
+
+Security:
+- .env.local excluded from this merged archive. Recreate environment variables locally.

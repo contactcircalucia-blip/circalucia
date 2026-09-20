@@ -233,18 +233,7 @@ export default function OrdersPage() {
                       View details →
                     </a>
 
-                    {hasTracking && (
-                      <small
-                        style={{
-                          display: "block",
-                          marginTop: "6px",
-                          color:
-                            "var(--muted)",
-                        }}
-                      >
-                        Shipment available
-                      </small>
-                    )}
+                    
                   </div>
                 </div>
               );

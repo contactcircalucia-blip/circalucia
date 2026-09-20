@@ -1,44 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { createClient } from "@supabase/supabase-js";
+
 import { sendCircaLuciaEmail } from "@/lib/email";
+
+const EMAIL_STATUSES = [
+  "ready_to_ship",
+  "shipped",
+  "delivered",
+  "cancelled",
+] as const;
+
+type EmailStatus = (typeof EMAIL_STATUSES)[number];
 
 function formatStatus(status: string) {
   return status
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
-/*
- * Always turn a tracking URL into an absolute URL.
- *
- * Example:
- * ekartlogistics.com/track/123
- * ->
- * https://ekartlogistics.com/track/123
- */
-function normalizeTrackingUrl(
-  value: string | null | undefined
-) {
-  const cleaned = (value || "").trim();
+function normalizeTrackingUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
 
-  if (!cleaned) return "";
+  const trimmed = value.trim();
 
-  if (
-    cleaned.startsWith("https://") ||
-    cleaned.startsWith("http://")
-  ) {
-    return cleaned;
+  if (!trimmed) return null;
+
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `https://${trimmed}`;
   }
 
-  return `https://${cleaned}`;
+  return trimmed;
 }
 
-/*
- * Basic HTML escaping so customer-provided information
- * cannot break the email HTML.
- */
-function escapeHtml(value: string | null | undefined) {
-  return String(value || "")
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -61,214 +58,235 @@ function buildStatusEmail({
   trackingNumber?: string | null;
   trackingUrl?: string | null;
 }) {
-  const formattedStatus = formatStatus(status);
-
-  let message = "";
-
-  switch (status) {
-    case "processing":
-      message =
-        "Your order is now being prepared by our team. We are carefully working on your order and will keep you updated as it progresses.";
-      break;
-
-    case "ready_to_ship":
-      message =
-        "Your order has been prepared and is now ready to leave our atelier.";
-      break;
-
-    case "shipped":
-      message =
-        "Your order has been dispatched and is now on its way to you.";
-      break;
-
-    case "delivered":
-      message =
-        "Your order has been delivered. We hope you love your Circa Lucia piece.";
-      break;
-
-    case "cancelled":
-      message =
-        "Your order has been cancelled. If you did not request this cancellation or need any assistance, please contact our team.";
-      break;
-
-    default:
-      message = `Your order status has been updated to ${formattedStatus}.`;
-  }
-
-  const safeCustomerName = escapeHtml(customerName);
+  const safeName = escapeHtml(customerName || "Customer");
   const safeOrderNumber = escapeHtml(orderNumber);
-  const safeFormattedStatus = escapeHtml(
-    formattedStatus
-  );
-  const safeMessage = escapeHtml(message);
-  const safeTrackingNumber = escapeHtml(
-    trackingNumber
-  );
+  const safeStatus = escapeHtml(formatStatus(status));
   const safeNote = escapeHtml(note);
+  const safeTrackingNumber = escapeHtml(trackingNumber);
 
-  const normalizedTrackingUrl =
-    normalizeTrackingUrl(trackingUrl);
+  const trackingSection =
+    trackingNumber || trackingUrl
+      ? `
+        <div style="
+          margin-top:24px;
+          padding:20px;
+          border:1px solid #d9d0c4;
+          background:#faf8f4;
+        ">
+          <div style="
+            font-family:Arial,sans-serif;
+            font-size:11px;
+            letter-spacing:1.5px;
+            text-transform:uppercase;
+            color:#716b64;
+            margin-bottom:10px;
+          ">
+            Shipment Details
+          </div>
 
-  let safeTrackingUrl = "";
+          ${
+            trackingNumber
+              ? `
+                <div style="
+                  font-family:Arial,sans-serif;
+                  font-size:15px;
+                  color:#141210;
+                  margin-bottom:12px;
+                ">
+                  <strong>Tracking / AWB:</strong>
+                  ${safeTrackingNumber}
+                </div>
+              `
+              : ""
+          }
 
-  if (normalizedTrackingUrl) {
-    try {
-      const parsedUrl = new URL(
-        normalizedTrackingUrl
-      );
+          ${
+            trackingUrl
+              ? `
+                <a
+                  href="${escapeHtml(trackingUrl)}"
+                  style="
+                    display:inline-block;
+                    padding:12px 18px;
+                    background:#141210;
+                    color:#ffffff;
+                    text-decoration:none;
+                    font-family:Arial,sans-serif;
+                    font-size:12px;
+                    letter-spacing:1px;
+                    text-transform:uppercase;
+                  "
+                >
+                  Track Shipment
+                </a>
+              `
+              : ""
+          }
+        </div>
+      `
+      : "";
 
-      if (
-        parsedUrl.protocol === "http:" ||
-        parsedUrl.protocol === "https:"
-      ) {
-        safeTrackingUrl = escapeHtml(
-          parsedUrl.toString()
-        );
-      }
-    } catch {
-      safeTrackingUrl = "";
-    }
-  }
+  const noteSection = note
+    ? `
+      <div style="
+        margin-top:24px;
+        padding:18px 20px;
+        border-left:3px solid #d9d0c4;
+        background:#faf8f4;
+      ">
+        <div style="
+          font-family:Arial,sans-serif;
+          font-size:11px;
+          letter-spacing:1.5px;
+          text-transform:uppercase;
+          color:#716b64;
+          margin-bottom:8px;
+        ">
+          Note from Circa Lucia
+        </div>
+
+        <div style="
+          font-family:Arial,sans-serif;
+          font-size:14px;
+          line-height:1.7;
+          color:#141210;
+        ">
+          ${safeNote}
+        </div>
+      </div>
+    `
+    : "";
 
   return `
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Circa Lucia Order Update</title>
-</head>
+  <body style="
+    margin:0;
+    padding:0;
+    background:#f3eee6;
+  ">
+    <div style="
+      width:100%;
+      padding:40px 16px;
+      box-sizing:border-box;
+    ">
+      <div style="
+        max-width:620px;
+        margin:0 auto;
+        background:#ffffff;
+        padding:40px;
+        box-sizing:border-box;
+      ">
+        <div style="
+          text-align:center;
+          margin-bottom:35px;
+        ">
+          <div style="
+            font-family:Georgia,'Times New Roman',serif;
+            font-size:30px;
+            letter-spacing:3px;
+            color:#141210;
+          ">
+            CIRCA LUCIA
+          </div>
 
-<body style="margin:0;padding:0;background:#f3eee6;font-family:Arial,Helvetica,sans-serif;color:#141210;">
-
-  <div style="max-width:640px;margin:0 auto;padding:40px 20px;">
-
-    <div style="background:#faf8f4;border:1px solid #d9d0c4;">
-
-      <div style="padding:42px 35px 30px;text-align:center;border-bottom:1px solid #d9d0c4;">
-        <div style="font-family:Georgia,'Times New Roman',serif;font-size:30px;letter-spacing:3px;color:#141210;">
-          CIRCA LUCIA
+          <div style="
+            margin-top:8px;
+            font-family:Arial,sans-serif;
+            font-size:10px;
+            letter-spacing:2px;
+            color:#716b64;
+            text-transform:uppercase;
+          ">
+            Crafted as You Imagined.
+          </div>
         </div>
 
-        <div style="margin-top:10px;font-family:Georgia,'Times New Roman',serif;font-size:13px;letter-spacing:1.5px;color:#716b64;">
-          CRAFTED AS YOU IMAGINED.
-        </div>
-      </div>
-
-      <div style="padding:40px 35px;">
-
-        <p style="margin:0 0 22px;font-family:Georgia,'Times New Roman',serif;font-size:25px;line-height:1.4;">
-          Hello ${safeCustomerName || "there"},
-        </p>
-
-        <p style="margin:0 0 28px;font-size:15px;line-height:1.8;color:#716b64;">
-          There is an update regarding your Circa Lucia order.
-        </p>
-
-        <div style="border-top:1px solid #d9d0c4;border-bottom:1px solid #d9d0c4;padding:22px 0;margin-bottom:28px;">
-
-          <div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#716b64;margin-bottom:8px;">
-            Order
-          </div>
-
-          <div style="font-family:Georgia,'Times New Roman',serif;font-size:20px;">
-            ${safeOrderNumber}
-          </div>
-
-          <div style="margin-top:18px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#716b64;margin-bottom:8px;">
-            Current status
-          </div>
-
-          <div style="font-family:Georgia,'Times New Roman',serif;font-size:20px;">
-            ${safeFormattedStatus}
-          </div>
-
+        <div style="
+          font-family:Georgia,'Times New Roman',serif;
+          font-size:26px;
+          color:#141210;
+          margin-bottom:18px;
+        ">
+          Order Update
         </div>
 
-        <p style="margin:0 0 28px;font-size:15px;line-height:1.8;color:#141210;">
-          ${safeMessage}
-        </p>
-
-        ${
-          trackingNumber
-            ? `
-        <div style="background:#f3eee6;padding:22px;margin:28px 0;">
-
-          <div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#716b64;margin-bottom:8px;">
-            Tracking number
-          </div>
-
-          <div style="font-size:16px;letter-spacing:0.5px;">
-            ${safeTrackingNumber}
-          </div>
-
-          ${
-            safeTrackingUrl
-              ? `
-          <div style="margin-top:18px;">
-            <a
-              href="${safeTrackingUrl}"
-              target="_blank"
-              rel="noopener noreferrer"
-              style="display:inline-block;background:#141210;color:#faf8f4;text-decoration:none;padding:13px 22px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;"
-            >
-              Track shipment
-            </a>
-          </div>
-          `
-              : `
-          <div style="margin-top:14px;font-size:13px;color:#716b64;">
-            Tracking information is available using the tracking number above.
-          </div>
-          `
-          }
-
+        <div style="
+          font-family:Arial,sans-serif;
+          font-size:15px;
+          line-height:1.7;
+          color:#141210;
+        ">
+          Dear ${safeName},
         </div>
-        `
-            : ""
-        }
 
-        ${
-          note
-            ? `
-        <div style="margin-top:28px;padding:20px;border-left:2px solid #d9d0c4;">
-
-          <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#716b64;margin-bottom:8px;">
-            Note from Circa Lucia
-          </div>
-
-          <div style="font-size:14px;line-height:1.7;">
-            ${safeNote}
-          </div>
-
+        <div style="
+          margin-top:16px;
+          font-family:Arial,sans-serif;
+          font-size:15px;
+          line-height:1.7;
+          color:#141210;
+        ">
+          There is an update regarding your Circa Lucia order
+          <strong>${safeOrderNumber}</strong>.
         </div>
-        `
-            : ""
-        }
 
-        <p style="margin:35px 0 0;font-size:14px;line-height:1.8;color:#716b64;">
+        <div style="
+          margin-top:24px;
+          padding:20px;
+          background:#f3eee6;
+        ">
+          <div style="
+            font-family:Arial,sans-serif;
+            font-size:11px;
+            letter-spacing:1.5px;
+            text-transform:uppercase;
+            color:#716b64;
+            margin-bottom:8px;
+          ">
+            Current Status
+          </div>
+
+          <div style="
+            font-family:Georgia,'Times New Roman',serif;
+            font-size:24px;
+            color:#141210;
+          ">
+            ${safeStatus}
+          </div>
+        </div>
+
+        ${trackingSection}
+
+        ${noteSection}
+
+        <div style="
+          margin-top:35px;
+          font-family:Arial,sans-serif;
+          font-size:14px;
+          line-height:1.7;
+          color:#716b64;
+        ">
           Thank you for choosing Circa Lucia.
-        </p>
-
-      </div>
-
-      <div style="padding:28px 35px;border-top:1px solid #d9d0c4;text-align:center;">
-
-        <div style="font-family:Georgia,'Times New Roman',serif;font-size:16px;letter-spacing:2px;">
-          CIRCA LUCIA
+          We will continue to keep you informed as your order progresses.
         </div>
 
-        <div style="margin-top:10px;font-size:11px;color:#716b64;letter-spacing:1px;">
-          Crafted as you imagined.
+        <div style="
+          margin-top:35px;
+          padding-top:20px;
+          border-top:1px solid #d9d0c4;
+          font-family:Arial,sans-serif;
+          font-size:12px;
+          line-height:1.6;
+          color:#716b64;
+          text-align:center;
+        ">
+          Circa Lucia<br />
+          Crafted as You Imagined.
         </div>
-
       </div>
-
     </div>
-
-  </div>
-
-</body>
+  </body>
 </html>
 `;
 }
@@ -287,153 +305,199 @@ export async function POST(request: NextRequest) {
       trackingUrl,
     } = body;
 
-    if (!accessToken || !orderId || !status) {
+    if (!accessToken) {
       return NextResponse.json(
         {
           success: false,
-          error: "Missing required fields.",
+          error: "MISSING_ACCESS_TOKEN",
+        },
+        { status: 401 }
+      );
+    }
+
+    if (!orderId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "MISSING_ORDER_ID",
         },
         { status: 400 }
       );
     }
 
-    /*
-     * Create a Supabase client using the admin user's
-     * authenticated access token.
-     */
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+    if (!status) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "MISSING_STATUS",
         },
-      }
+        { status: 400 }
+      );
+    }
+
+    if (!EMAIL_STATUSES.includes(status as EmailStatus)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `EMAIL_NOT_REQUIRED_FOR_STATUS: ${status}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    const publishableKey =
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+    const serviceRoleKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "SUPABASE_URL_NOT_CONFIGURED",
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!publishableKey) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "SUPABASE_PUBLISHABLE_KEY_NOT_CONFIGURED",
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!serviceRoleKey) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "SUPABASE_SERVICE_ROLE_KEY_NOT_CONFIGURED. Add SUPABASE_SERVICE_ROLE_KEY to .env.local and restart Next.js.",
+        },
+        { status: 500 }
+      );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 1. Verify the currently logged-in admin
+     * ---------------------------------------------------------
+     */
+
+    const supabaseAuth = createClient(
+      supabaseUrl,
+      publishableKey
     );
 
-    /*
-     * Verify the authenticated user.
-     */
     const {
       data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+      error: authError,
+    } = await supabaseAuth.auth.getUser(accessToken);
 
-    if (userError || !user) {
+    if (authError || !user) {
       console.error(
-        "Order status email AUTH_REQUIRED:",
-        userError
+        "Order email auth failed:",
+        authError
       );
 
       return NextResponse.json(
         {
           success: false,
-          error: "AUTH_REQUIRED",
+          error: "ADMIN_AUTH_FAILED",
         },
         { status: 401 }
       );
     }
 
     /*
-     * Verify admin.
+     * ---------------------------------------------------------
+     * 2. Create server-only service-role client
+     * ---------------------------------------------------------
      */
-    const {
-      data: profile,
-      error: profileError,
-    } = await supabase
-      .from("profiles")
-      .select("is_admin")
-      .eq("id", user.id)
-      .single();
 
-    if (profileError) {
-      console.error(
-        "Admin profile lookup failed:",
-        profileError
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: `ADMIN_PROFILE_LOOKUP_FAILED: ${profileError.message}`,
-        },
-        { status: 403 }
-      );
-    }
-
-    if (!profile?.is_admin) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "ADMIN_REQUIRED",
-        },
-        { status: 403 }
-      );
-    }
-
-    /*
-     * Get the customer email from auth.users through
-     * the SECURITY DEFINER RPC.
-     */
-    const {
-      data: customerEmail,
-      error: customerEmailError,
-    } = await supabase.rpc(
-      "admin_get_order_customer_email",
+    const supabaseAdmin = createClient(
+      supabaseUrl,
+      serviceRoleKey,
       {
-        p_order_id: orderId,
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
       }
     );
 
-    if (customerEmailError) {
-      console.error(
-        "Customer email lookup error:",
-        customerEmailError
-      );
+    /*
+     * ---------------------------------------------------------
+     * 3. Verify that the logged-in user is an admin
+     * ---------------------------------------------------------
+     */
 
-      return NextResponse.json(
-        {
-          success: false,
-          error: `CUSTOMER_EMAIL_LOOKUP_FAILED: ${customerEmailError.message}`,
-        },
-        { status: 500 }
-      );
-    }
+    const {
+      data: adminProfile,
+      error: adminProfileError,
+    } = await supabaseAdmin
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle();
 
-    if (!customerEmail) {
+    if (adminProfileError) {
       console.error(
-        "Customer email was empty for order:",
-        orderId
+        "Admin profile lookup failed:",
+        adminProfileError
       );
 
       return NextResponse.json(
         {
           success: false,
           error:
-            "CUSTOMER_EMAIL_NOT_FOUND",
+            `ADMIN_PROFILE_LOOKUP_FAILED: ${adminProfileError.message}`,
         },
-        { status: 404 }
+        { status: 500 }
+      );
+    }
+
+    if (!adminProfile?.is_admin) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "ADMIN_ACCESS_REQUIRED",
+        },
+        { status: 403 }
       );
     }
 
     /*
-     * Get the actual order.
-     *
-     * We fetch tracking data directly from the database
-     * rather than trusting stale browser values.
+     * ---------------------------------------------------------
+     * 4. Find the order
+     * ---------------------------------------------------------
      */
+
     const {
       data: order,
       error: orderError,
-    } = await supabase
+    } = await supabaseAdmin
       .from("orders")
       .select(
-        "user_id, order_number, status, carrier, tracking_number, tracking_url"
+        `
+        id,
+        user_id,
+        order_number,
+        status,
+        carrier,
+        tracking_number,
+        tracking_url
+        `
       )
       .eq("id", orderId)
-      .single();
+      .maybeSingle();
 
     if (orderError) {
       console.error(
@@ -444,46 +508,136 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: `ORDER_LOOKUP_FAILED: ${orderError.message}`,
+          error:
+            `ORDER_LOOKUP_FAILED: ${orderError.message}`,
         },
         { status: 404 }
       );
     }
 
-    if (!order?.user_id) {
+    if (!order) {
       return NextResponse.json(
         {
           success: false,
-          error: "ORDER_CUSTOMER_NOT_FOUND",
+          error: `ORDER_NOT_FOUND: ${orderId}`,
         },
         { status: 404 }
       );
     }
 
     /*
-     * Use the database tracking values.
-     *
-     * This is important because the browser may have an
-     * old value while the database contains the latest one.
+     * ---------------------------------------------------------
+     * 5. Make sure database status matches email
+     * ---------------------------------------------------------
      */
-    const finalTrackingNumber =
-      order.tracking_number ||
-      trackingNumber ||
-      null;
 
-    const finalTrackingUrl = normalizeTrackingUrl(
-      order.tracking_url ||
-        trackingUrl ||
-        ""
+    if (order.status !== status) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            `STATUS_MISMATCH: Database status is "${order.status}" ` +
+            `but email requested status "${status}".`,
+        },
+        { status: 409 }
+      );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * 6. Get customer email from Supabase Auth
+     * ---------------------------------------------------------
+     */
+
+    if (!order.user_id) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "ORDER_HAS_NO_CUSTOMER",
+        },
+        { status: 400 }
+      );
+    }
+
+    const {
+      data: customerAuth,
+      error: customerAuthError,
+    } =
+      await supabaseAdmin.auth.admin.getUserById(
+        order.user_id
+      );
+
+    if (customerAuthError) {
+      console.error(
+        "Customer auth lookup failed:",
+        customerAuthError
+      );
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            `CUSTOMER_EMAIL_LOOKUP_FAILED: ${customerAuthError.message}`,
+        },
+        { status: 500 }
+      );
+    }
+
+    /*
+     * This is the customer's REAL email.
+     * We keep retrieving it now because we will use it later
+     * when the Circa Lucia domain is verified with Resend.
+     */
+
+    const actualCustomerEmail =
+      customerAuth.user?.email;
+
+    if (!actualCustomerEmail) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "CUSTOMER_HAS_NO_EMAIL",
+        },
+        { status: 400 }
+      );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * TEMPORARY V2 TESTING MODE
+     * ---------------------------------------------------------
+     *
+     * Resend's onboarding@resend.dev sender currently allows
+     * testing emails only to the Resend account owner's email.
+     *
+     * Therefore, ALL order-status emails temporarily go to:
+     *
+     * contact.circalucia@gmail.com
+     *
+     * Later, after verifying the Circa Lucia domain with Resend,
+     * change this to:
+     *
+     * const customerEmail = actualCustomerEmail;
+     */
+
+    const customerEmail =
+      "contact.circalucia@gmail.com";
+
+    console.log(
+      "EMAIL RECIPIENT BEING SENT TO:",
+      customerEmail
     );
 
     /*
-     * Get customer's name.
+     * ---------------------------------------------------------
+     * 7. Get customer profile name
+     * ---------------------------------------------------------
      */
+
     const {
       data: customerProfile,
       error: customerProfileError,
-    } = await supabase
+    } = await supabaseAdmin
       .from("profiles")
       .select("full_name")
       .eq("id", order.user_id)
@@ -491,113 +645,110 @@ export async function POST(request: NextRequest) {
 
     if (customerProfileError) {
       console.warn(
-        "Customer profile name lookup failed:",
+        "Customer profile lookup failed. Continuing without name:",
         customerProfileError
       );
     }
 
     const customerName =
-      customerProfile?.full_name || "there";
+      customerProfile?.full_name ||
+      customerAuth.user?.user_metadata?.full_name ||
+      "Customer";
 
     /*
-     * Use the actual database order number where possible.
+     * ---------------------------------------------------------
+     * 8. Use database shipping information
+     * ---------------------------------------------------------
      */
-    const finalOrderNumber =
-      order.order_number ||
-      orderNumber ||
-      orderId;
+
+    const finalTrackingNumber =
+      order.tracking_number ||
+      trackingNumber ||
+      null;
+
+    const finalTrackingUrl =
+      normalizeTrackingUrl(
+        order.tracking_url ||
+        trackingUrl
+      );
 
     /*
-     * Build email.
+     * ---------------------------------------------------------
+     * 9. Build subject
+     * ---------------------------------------------------------
      */
+
+    const subjectMap: Record<EmailStatus, string> = {
+      ready_to_ship:
+        `Your Circa Lucia order ${order.order_number} is ready to ship`,
+
+      shipped:
+        `Your Circa Lucia order ${order.order_number} has shipped`,
+
+      delivered:
+        `Your Circa Lucia order ${order.order_number} has been delivered`,
+
+      cancelled:
+        `Your Circa Lucia order ${order.order_number} has been cancelled`,
+    };
+
+    const subject =
+      subjectMap[status as EmailStatus];
+
+    /*
+     * ---------------------------------------------------------
+     * 10. Build HTML
+     * ---------------------------------------------------------
+     */
+
     const html = buildStatusEmail({
       customerName,
-      orderNumber: finalOrderNumber,
+      orderNumber:
+        order.order_number || orderNumber,
       status,
-      note,
+      note: note || null,
       trackingNumber: finalTrackingNumber,
       trackingUrl: finalTrackingUrl,
     });
 
-    const subjectMap: Record<
-      string,
-      string
-    > = {
-      processing: `Your Circa Lucia order ${finalOrderNumber} is being prepared`,
-
-      ready_to_ship: `Your Circa Lucia order ${finalOrderNumber} is ready to ship`,
-
-      shipped: `Your Circa Lucia order ${finalOrderNumber} has been shipped`,
-
-      delivered: `Your Circa Lucia order ${finalOrderNumber} has been delivered`,
-
-      cancelled: `Your Circa Lucia order ${finalOrderNumber} has been cancelled`,
-    };
-
-    const subject =
-      subjectMap[status] ||
-      `Update regarding your Circa Lucia order ${finalOrderNumber}`;
-
     /*
-     * SEND EMAIL
-     *
-     * Keep this in a try/catch separately so that if Resend
-     * rejects the email, we return the exact error to the
-     * admin page.
+     * ---------------------------------------------------------
+     * 11. Send through Resend
+     * ---------------------------------------------------------
      */
-    try {
-      const emailResult =
-        await sendCircaLuciaEmail({
-          to: customerEmail,
-          subject,
-          html,
-        });
 
-      console.log(
-        "Circa Lucia order status email sent:",
-        {
-          orderId,
-          orderNumber: finalOrderNumber,
-          status,
-          customerEmail,
-          trackingNumber:
-            finalTrackingNumber,
-          trackingUrl:
-            finalTrackingUrl || null,
-          resendResult: emailResult,
-        }
-      );
-
-      return NextResponse.json({
-        success: true,
-        message:
-          "Order status email sent successfully.",
-        customerEmail,
-        trackingNumber:
-          finalTrackingNumber,
-        trackingUrl:
-          finalTrackingUrl || null,
+    const emailResult =
+      await sendCircaLuciaEmail({
+        to: customerEmail,
+        subject,
+        html,
       });
-    } catch (emailError) {
-      console.error(
-        "Resend rejected order status email:",
-        emailError
-      );
 
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            emailError instanceof Error
-              ? `RESEND_EMAIL_FAILED: ${emailError.message}`
-              : "RESEND_EMAIL_FAILED",
-        },
-        { status: 500 }
-      );
-    }
+    console.log(
+      "Circa Lucia order status email sent:",
+      {
+        orderId: order.id,
+        orderNumber: order.order_number,
+        status,
+        customerEmail,
+        actualCustomerEmail,
+        resendId: emailResult?.id || null,
+      }
+    );
+
+    return NextResponse.json({
+      success: true,
+      message:
+        "Order status email sent successfully.",
+      orderId: order.id,
+      orderNumber: order.order_number,
+      status,
+      resendId: emailResult?.id || null,
+    });
+
   } catch (error) {
     console.error(
-      "Order status email route error:",
+      "Order status email route crashed:",
       error
     );
 
@@ -607,7 +758,7 @@ export async function POST(request: NextRequest) {
         error:
           error instanceof Error
             ? error.message
-            : "EMAIL_SEND_FAILED",
+            : "UNKNOWN_EMAIL_ROUTE_ERROR",
       },
       { status: 500 }
     );

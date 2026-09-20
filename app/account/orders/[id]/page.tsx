@@ -492,11 +492,13 @@ export default function OrderDetailsPage() {
     generatedTrackingUrl;
 
   const hasTracking =
-    Boolean(
-      displayCarrier ||
-      order.tracking_number ||
-      finalTrackingUrl
-    );
+  (order.status === "shipped" ||
+    order.status === "delivered") &&
+  Boolean(
+    displayCarrier ||
+    order.tracking_number ||
+    finalTrackingUrl
+  );
 
   return (
     <section className="section account-page">
