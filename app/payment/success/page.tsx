@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -10,7 +10,7 @@ type PaidOrder = {
   payment_status: string;
 };
 
-export default function PaymentSuccessPage() {
+function PaymentSuccessContent() {
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
 
@@ -51,16 +51,24 @@ export default function PaymentSuccessPage() {
         }
 
         const paidOrder = (data as PaidOrder | null) || null;
+
         setOrder(paidOrder);
 
-        // Only perform post-payment actions after Supabase itself confirms paid.
+        // Only perform post-payment actions after Supabase
+        // itself confirms that the order is paid.
         if (paidOrder?.payment_status === "paid") {
+          // Clear the customer's cart.
           localStorage.removeItem("cl-cart");
-          window.dispatchEvent(new Event("cl-cart-updated"));
 
-          // Prevent repeated refreshes in the same browser from repeatedly
-          // requesting the same confirmation email.
-          const emailFlag = `cl-order-email-${orderId}`;
+          // Tell the rest of the website that the cart changed.
+          window.dispatchEvent(
+            new Event("cl-cart-updated")
+          );
+
+          // Prevent repeated refreshes in the same browser
+          // from repeatedly requesting the same email.
+          const emailFlag =
+            `cl-order-email-${orderId}`;
 
           if (!localStorage.getItem(emailFlag)) {
             try {
@@ -69,7 +77,8 @@ export default function PaymentSuccessPage() {
                 {
                   method: "POST",
                   headers: {
-                    "Content-Type": "application/json",
+                    "Content-Type":
+                      "application/json",
                   },
                   body: JSON.stringify({
                     orderId,
@@ -78,10 +87,17 @@ export default function PaymentSuccessPage() {
                 }
               );
 
-              const emailResult = await emailResponse.json();
+              const emailResult =
+                await emailResponse.json();
 
-              if (emailResponse.ok && emailResult?.success) {
-                localStorage.setItem(emailFlag, "sent");
+              if (
+                emailResponse.ok &&
+                emailResult?.success
+              ) {
+                localStorage.setItem(
+                  emailFlag,
+                  "sent"
+                );
               } else {
                 console.error(
                   "Order confirmation email was not sent:",
@@ -97,7 +113,10 @@ export default function PaymentSuccessPage() {
           }
         }
       } catch (error) {
-        console.error("Payment success page error:", error);
+        console.error(
+          "Payment success page error:",
+          error
+        );
       } finally {
         setLoading(false);
       }
@@ -115,7 +134,8 @@ export default function PaymentSuccessPage() {
     );
   }
 
-  const paid = order?.payment_status === "paid";
+  const paid =
+    order?.payment_status === "paid";
 
   return (
     <section
@@ -128,7 +148,9 @@ export default function PaymentSuccessPage() {
       }}
     >
       <p className="eyebrow">
-        {paid ? "PAYMENT CONFIRMED" : "PAYMENT STATUS"}
+        {paid
+          ? "PAYMENT CONFIRMED"
+          : "PAYMENT STATUS"}
       </p>
 
       <h1>
@@ -168,5 +190,24 @@ export default function PaymentSuccessPage() {
         </Link>
       </div>
     </section>
+  );
+}
+
+function PaymentSuccessLoading() {
+  return (
+    <section className="section">
+      <p className="eyebrow">PAYMENT</p>
+      <h1>Confirming...</h1>
+    </section>
+  );
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <Suspense
+      fallback={<PaymentSuccessLoading />}
+    >
+      <PaymentSuccessContent />
+    </Suspense>
   );
 }
