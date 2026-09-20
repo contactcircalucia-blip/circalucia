@@ -6,12 +6,21 @@ export type Product = {
   name: string;
   collection: string | null;
   description: string | null;
+
   price: number;
+
+  // Product-level checkout charges
+  shipping_charge: number;
+  tax_percent: number;
+
   material: string | null;
   heel_height: string | null;
   image_url: string | null;
+
   is_active: boolean;
   is_bespoke: boolean;
+  featured_home: boolean;
+
   created_at: string;
   updated_at: string;
 };
@@ -28,7 +37,7 @@ export async function getProducts() {
     return [];
   }
 
-  return data as Product[];
+  return (data || []) as Product[];
 }
 
 export async function getProduct(slug: string) {
@@ -47,7 +56,9 @@ export async function getProduct(slug: string) {
   return data as Product;
 }
 
-export async function getProductVariants(productId: string) {
+export async function getProductVariants(
+  productId: string
+) {
   const { data, error } = await supabase
     .from("product_variants")
     .select("*")
@@ -56,22 +67,15 @@ export async function getProductVariants(productId: string) {
     .order("size", { ascending: true });
 
   if (error) {
-    console.error("Error fetching product variants:", error);
+    console.error(
+      "Error fetching product variants:",
+      error
+    );
+
     return [];
   }
 
-  return data;
-}
-
-
-export function getProductImage(product: Pick<Product, "name" | "slug">) {
-  const key = `${product.name} ${product.slug}`.toLowerCase();
-
-  if (key.includes("luciana")) return "/products/luciana.jpeg";
-  if (key.includes("celeste") || key.includes("celesta")) return "/products/celeste.jpeg";
-  if (key.includes("aurora")) return "/products/aurora.jpeg";
-
-  return null;
+  return data || [];
 }
 
 export function formatINR(value: number) {
@@ -79,5 +83,47 @@ export function formatINR(value: number) {
     style: "currency",
     currency: "INR",
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(Number(value || 0));
+}
+
+export function getProductImage(
+  product: Product
+) {
+  /*
+   * Admin/database image always wins.
+   *
+   * This means newly created Admin products
+   * automatically use their own image_url.
+   */
+
+  const databaseImage =
+    product.image_url?.trim();
+
+  if (databaseImage) {
+    return databaseImage;
+  }
+
+  /*
+   * Legacy collection fallbacks.
+   *
+   * These remain only for the original products
+   * if they do not have image_url set.
+   */
+
+  const slug =
+    product.slug?.toLowerCase();
+
+  if (slug === "the-luciana") {
+    return "/products/luciana.jpg";
+  }
+
+  if (slug === "the-aurora") {
+    return "/products/aurora.jpg";
+  }
+
+  if (slug === "the-celeste") {
+    return "/products/celeste.jpg";
+  }
+
+  return null;
 }

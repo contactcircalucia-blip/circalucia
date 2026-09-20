@@ -9,6 +9,14 @@ import {
 export default async function Home() {
   const products = await getProducts();
 
+  const featuredProducts = products
+    .filter(
+      (product) =>
+        product.is_active === true &&
+        product.featured_home === true
+    )
+    .slice(0, 3);
+
   return (
     <>
       {/* =====================================================
@@ -77,7 +85,7 @@ export default async function Home() {
         </div>
 
         <div className="product-grid">
-          {products.map((p) => {
+          {featuredProducts.map((p) => {
             const productImage = getProductImage(p);
 
             return (

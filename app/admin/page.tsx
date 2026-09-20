@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 type Order = {
@@ -990,54 +991,35 @@ export default function AdminPage() {
         <div className="container">
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-end",
-              gap: "20px",
-              marginBottom: "40px",
-              flexWrap: "wrap",
+              display: "flex", justifyContent: "space-between",
+              alignItems: "flex-end", gap: "20px",
+              marginBottom: "22px", flexWrap: "wrap",
             }}
           >
             <div>
-              <p
-                style={{
-                  marginBottom: "8px",
-                  fontSize: "12px",
-                  letterSpacing: "0.16em",
-                  textTransform: "uppercase",
-                  color: "var(--muted)",
-                }}
-              >
-                Circa Lucia
+              <p style={{marginBottom:"8px",fontSize:"12px",letterSpacing:"0.16em",textTransform:"uppercase",color:"var(--muted)"}}>
+                Circa Lucia · Administration
               </p>
-
-              <h1
-                style={{
-                  margin: 0,
-                  fontFamily: "Cormorant Garamond, serif",
-                  fontSize: "48px",
-                  fontWeight: 500,
-                }}
-              >
-                Administration
+              <h1 style={{margin:0,fontFamily:"Cormorant Garamond, serif",fontSize:"48px",fontWeight:500}}>
+                Orders
               </h1>
             </div>
-
-            <button
-              type="button"
-              onClick={loadOrders}
-              disabled={loading}
-              style={{
-                padding: "12px 18px",
-                border: "1px solid var(--line)",
-                background: "transparent",
-                cursor: loading ? "not-allowed" : "pointer",
-                opacity: loading ? 0.6 : 1,
-              }}
-            >
+            <button type="button" onClick={loadOrders} disabled={loading}
+              style={{padding:"12px 18px",border:"1px solid var(--line)",background:"transparent",cursor:loading?"not-allowed":"pointer",opacity:loading?0.6:1}}>
               {loading ? "Refreshing..." : "Refresh orders"}
             </button>
           </div>
+
+          <nav aria-label="Admin sections" style={{
+            display:"flex",alignItems:"center",gap:"28px",flexWrap:"wrap",
+            borderTop:"1px solid var(--line)",borderBottom:"1px solid var(--line)",
+            padding:"14px 0",marginBottom:"25px"
+          }}>
+            <Link href="/admin" style={{color:"var(--ink)",textDecoration:"underline",textUnderlineOffset:"6px",fontWeight:600,fontSize:"12px",letterSpacing:"0.08em",textTransform:"uppercase"}}>Orders</Link>
+            <Link href="/admin/customers" style={{color:"var(--ink)",textDecoration:"none",fontSize:"12px",letterSpacing:"0.08em",textTransform:"uppercase"}}>Customers</Link>
+            <Link href="/admin/management" style={{color:"var(--ink)",textDecoration:"none",fontSize:"12px",letterSpacing:"0.08em",textTransform:"uppercase"}}>Bespoke &amp; Catalogue</Link>
+            <Link href="/admin/stock" style={{color:"var(--ink)",textDecoration:"none",fontSize:"12px",letterSpacing:"0.08em",textTransform:"uppercase"}}>Stock Management</Link>
+          </nav>
 
           {message && (
             <div

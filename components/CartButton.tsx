@@ -27,6 +27,12 @@ export default function CartButton({
   const [loginRequired, setLoginRequired] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(false);
 
+  /*
+   * ------------------------------------------------------------
+   * CART QUANTITY
+   * ------------------------------------------------------------
+   */
+
   function getCartQty() {
     try {
       const cart = JSON.parse(
@@ -70,10 +76,24 @@ export default function CartButton({
     };
   }, []);
 
+  /*
+   * ------------------------------------------------------------
+   * ADD PRODUCT TO CART
+   * ------------------------------------------------------------
+   *
+   * IMPORTANT:
+   *
+   * product_inventory is now the main stock authority.
+   *
+   * A product DOES NOT need a product_variants row simply
+   * to be added to the cart.
+   *
+   * variantId remains supported for older products that use it.
+   */
+
   async function add() {
     if (
       disabled ||
-      !variantId ||
       !size ||
       stockQuantity <= 0 ||
       checkingAuth
@@ -85,6 +105,12 @@ export default function CartButton({
     setCheckingAuth(true);
 
     try {
+      /*
+       * --------------------------------------------------------
+       * REQUIRE LOGIN
+       * --------------------------------------------------------
+       */
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -94,50 +120,170 @@ export default function CartButton({
         return;
       }
 
-      const cart = JSON.parse(
-        localStorage.getItem("cl-cart") || "[]"
-      );
+      /*
+       * --------------------------------------------------------
+       * LOAD EXISTING CART
+       * --------------------------------------------------------
+       */
 
-      if (!Array.isArray(cart)) {
-        return;
+      let cart: any[] = [];
+
+      try {
+        const storedCart = JSON.parse(
+          localStorage.getItem("cl-cart") || "[]"
+        );
+
+        if (Array.isArray(storedCart)) {
+          cart = storedCart;
+        }
+      } catch {
+        cart = [];
       }
+
+      /*
+       * --------------------------------------------------------
+       * FIND SAME PRODUCT + SAME SIZE
+       * --------------------------------------------------------
+       *
+       * We do NOT depend on variantId here.
+       *
+       * This allows every Admin-created product to work even
+       * when it has inventory but no product_variants record.
+       */
 
       const existing = cart.find(
         (item: any) =>
           item.slug === product.slug &&
-          item.variantId === variantId
+          item.size === size
       );
 
+      /*
+       * --------------------------------------------------------
+       * UPDATE EXISTING CART ITEM
+       * --------------------------------------------------------
+       */
+
       if (existing) {
+        existing.productId = product.id;
+        existing.name = product.name;
+        existing.price = price ?? product.price;
+        existing.shipping_charge = Number(product.shipping_charge || 0);
+        existing.tax_percent = Number(product.tax_percent || 0);
         existing.stockQuantity = stockQuantity;
 
-        if (existing.qty >= stockQuantity) {
+        /*
+         * Keep variant ID when one exists.
+         */
+
+        if (variantId) {
+          existing.variantId = variantId;
+        }
+
+        /*
+         * Keep the current product image.
+         */
+
+        existing.image =
+          product.image_url ?? existing.image ?? null;
+
+        /*
+         * Do not allow quantity above available stock.
+         */
+
+        if (
+          Number(existing.qty || 0) >= stockQuantity
+        ) {
           return;
         }
 
-        existing.qty += 1;
+        existing.qty =
+          Number(existing.qty || 0) + 1;
       } else {
+        /*
+         * ------------------------------------------------------
+         * CREATE NEW CART ITEM
+         * ------------------------------------------------------
+         */
+
         cart.push({
+          productId: product.id,
           slug: product.slug,
           name: product.name,
-          price: price ?? product.price,
+
+          price:
+            price ?? product.price,
+
+          /*
+           * Product-level checkout charges.
+           *
+           * These values come from Admin -> Product Management
+           * and travel with the cart item into checkout.
+           */
+
+          shipping_charge:
+            Number(product.shipping_charge || 0),
+
+          tax_percent:
+            Number(product.tax_percent || 0),
+
           qty: 1,
-          variantId,
+
+          /*
+           * Variant is optional.
+           */
+
+          variantId:
+            variantId ?? null,
+
           size,
+
+          /*
+           * Stock available for this exact size.
+           */
+
           stockQuantity,
+
+          /*
+           * Store the database image URL/path.
+           *
+           * Example:
+           * /test.jpg
+           *
+           * Future Admin-created products will therefore carry
+           * their own image into the cart.
+           */
+
+          image:
+            product.image_url ?? null,
         });
       }
+
+      /*
+       * --------------------------------------------------------
+       * SAVE CART
+       * --------------------------------------------------------
+       */
 
       localStorage.setItem(
         "cl-cart",
         JSON.stringify(cart)
       );
 
+      /*
+       * Notify Header / Cart / other listeners.
+       */
+
       window.dispatchEvent(
         new Event("cl-cart-updated")
       );
 
       getCartQty();
+
+      /*
+       * --------------------------------------------------------
+       * SHOW ADDED NOTIFICATION
+       * --------------------------------------------------------
+       */
 
       setAdded(true);
 
@@ -154,21 +300,36 @@ export default function CartButton({
     }
   }
 
+  /*
+   * ------------------------------------------------------------
+   * BUTTON AVAILABILITY
+   * ------------------------------------------------------------
+   *
+   * variantId is deliberately NOT required.
+   *
+   * A selected in-stock size is enough.
+   */
+
   const buttonDisabled =
     disabled ||
-    !variantId ||
     !size ||
     stockQuantity <= 0 ||
     checkingAuth;
 
   return (
     <>
+      {/* ======================================================
+          COMMISSION / ADD TO BAG
+          ====================================================== */}
+
       <button
+        type="button"
         className="button button-dark"
         onClick={add}
         disabled={buttonDisabled}
         style={{
           opacity: buttonDisabled ? 0.5 : 1,
+
           cursor: buttonDisabled
             ? "not-allowed"
             : "pointer",
@@ -180,6 +341,10 @@ export default function CartButton({
           ? "Out of stock"
           : "Commission this design"}
       </button>
+
+      {/* ======================================================
+          LOGIN REQUIRED
+          ====================================================== */}
 
       {loginRequired && (
         <div className="login-required">
@@ -193,6 +358,10 @@ export default function CartButton({
         </div>
       )}
 
+      {/* ======================================================
+          ADDED TO CART NOTIFICATION
+          ====================================================== */}
+
       {added && (
         <Link
           href="/cart"
@@ -202,41 +371,67 @@ export default function CartButton({
             right: "24px",
             bottom: "24px",
             zIndex: 9999,
+
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+
             gap: "20px",
+
             minWidth: "250px",
             minHeight: "54px",
+
             padding: "16px 20px",
+
             boxSizing: "border-box",
+
             background: "#141210",
             color: "#f3eee6",
+
             textDecoration: "none",
+
             border: "1px solid #7A263A",
+
             boxShadow:
               "0 12px 30px rgba(0, 0, 0, 0.18)",
+
             fontSize: "14px",
-            fontFamily: "Inter, Arial, sans-serif",
+            fontFamily:
+              "Inter, Arial, sans-serif",
+
             fontWeight: 300,
+
             letterSpacing: "0.02em",
+
             cursor: "pointer",
           }}
         >
-          <span>Item added to cart</span>
+          <span>
+            Item added to cart
+          </span>
 
           <span
             style={{
               fontSize: "12px",
-              textDecoration: "underline",
-              textUnderlineOffset: "3px",
-              whiteSpace: "nowrap",
+
+              textDecoration:
+                "underline",
+
+              textUnderlineOffset:
+                "3px",
+
+              whiteSpace:
+                "nowrap",
             }}
           >
             View bag
           </span>
         </Link>
       )}
+
+      {/* ======================================================
+          FLOATING CART BUTTON
+          ====================================================== */}
 
       <Link
         href="/cart"
@@ -277,56 +472,92 @@ export default function CartButton({
 
         {cartQty > 0 && (
           <span className="floating-cart-count">
-            {cartQty > 99 ? "99+" : cartQty}
+            {cartQty > 99
+              ? "99+"
+              : cartQty}
           </span>
         )}
       </Link>
 
+      {/* ======================================================
+          STYLES
+          ====================================================== */}
+
       <style jsx>{`
         .login-required {
           margin-top: 12px;
+
           padding: 12px 14px;
+
           border: 1px solid #d9d0c4;
+
           background: #faf8f4;
+
           color: #716b64;
+
           font-size: 12px;
+
           line-height: 1.5;
+
           display: flex;
+
           align-items: center;
-          justify-content: space-between;
+
+          justify-content:
+            space-between;
+
           gap: 14px;
         }
 
         .login-required a {
           color: #141210;
-          text-decoration: underline;
-          text-underline-offset: 3px;
-          white-space: nowrap;
+
+          text-decoration:
+            underline;
+
+          text-underline-offset:
+            3px;
+
+          white-space:
+            nowrap;
         }
 
         .floating-cart-button {
           position: fixed;
+
           right: 24px;
           bottom: 24px;
+
           z-index: 9998;
 
           width: 54px;
           height: 54px;
 
           display: flex;
+
           align-items: center;
-          justify-content: center;
 
-          background: #141210;
-          color: #f3eee6;
+          justify-content:
+            center;
 
-          border: 1px solid #7a263a;
-          border-radius: 50%;
+          background:
+            #141210;
 
-          text-decoration: none;
+          color:
+            #f3eee6;
+
+          border:
+            1px solid #7a263a;
+
+          border-radius:
+            50%;
+
+          text-decoration:
+            none;
 
           box-shadow:
-            0 10px 30px rgba(0, 0, 0, 0.22);
+            0 10px 30px
+            rgba(0, 0, 0, 0.22);
 
           transition:
             transform 0.25s ease,
@@ -334,52 +565,86 @@ export default function CartButton({
         }
 
         .floating-cart-button:hover {
-          transform: translateY(-3px);
+          transform:
+            translateY(-3px);
+
           box-shadow:
-            0 15px 35px rgba(0, 0, 0, 0.28);
+            0 15px 35px
+            rgba(0, 0, 0, 0.28);
         }
 
         .floating-cart-count {
-          position: absolute;
+          position:
+            absolute;
+
           top: -5px;
           right: -5px;
 
           min-width: 19px;
+
           height: 19px;
 
           display: flex;
-          align-items: center;
-          justify-content: center;
+
+          align-items:
+            center;
+
+          justify-content:
+            center;
 
           padding: 0 5px;
 
-          background: #7a263a;
-          color: #f3eee6;
+          background:
+            #7a263a;
 
-          border: 2px solid #f3eee6;
-          border-radius: 50%;
+          color:
+            #f3eee6;
 
-          font-size: 10px;
+          border:
+            2px solid #f3eee6;
+
+          border-radius:
+            50%;
+
+          font-size:
+            10px;
+
           line-height: 1;
-          font-weight: 600;
+
+          font-weight:
+            600;
         }
 
         @media (max-width: 600px) {
           .cart-added-notification {
-            right: 16px !important;
-            bottom: 16px !important;
-            width: calc(100vw - 32px) !important;
-            min-width: 0 !important;
+            right:
+              16px !important;
+
+            bottom:
+              16px !important;
+
+            width:
+              calc(
+                100vw - 32px
+              ) !important;
+
+            min-width:
+              0 !important;
           }
 
           .login-required {
-            align-items: flex-start;
-            flex-direction: column;
+            align-items:
+              flex-start;
+
+            flex-direction:
+              column;
+
             gap: 6px;
           }
 
           .floating-cart-button {
             right: 16px;
+
             bottom: 16px;
           }
         }

@@ -56,7 +56,9 @@ export async function POST(request: Request) {
           status,
           subtotal,
           shipping_amount,
+          tax_amount,
           total_amount,
+          payment_status,
           currency,
           shipping_address,
           created_at
@@ -88,6 +90,16 @@ export async function POST(request: Request) {
           error: "Order not found.",
         },
         { status: 404 }
+      );
+    }
+
+    if (order.payment_status !== "paid") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "ORDER_NOT_PAID",
+        },
+        { status: 409 }
       );
     }
 
@@ -235,9 +247,9 @@ export async function POST(request: Request) {
             line-height:1.7;
             font-size:14px;
           ">
-            Your order has been received successfully.
-            Your order is currently awaiting payment
-            confirmation.
+            Your payment has been confirmed successfully.
+            Your CIRCA LUCIA order is now confirmed and
+            will move into preparation.
           </p>
 
           <div style="
@@ -360,6 +372,22 @@ export async function POST(request: Request) {
             <div style="
               display:flex;
               justify-content:space-between;
+              margin-bottom:8px;
+              font-size:13px;
+              color:#716b64;
+            ">
+              <span>Tax</span>
+
+              <span>
+                ₹${Number(
+                  order.tax_amount || 0
+                ).toLocaleString("en-IN")}
+              </span>
+            </div>
+
+            <div style="
+              display:flex;
+              justify-content:space-between;
               padding-top:12px;
               margin-top:12px;
               border-top:1px solid #d9d0c4;
@@ -382,10 +410,9 @@ export async function POST(request: Request) {
             font-size:12px;
             line-height:1.7;
           ">
-            Payment gateway integration will be connected
-            before launch. Once payment is confirmed,
-            the Circa Lucia atelier will begin preparing
-            your pair.
+            Payment confirmed. The Circa Lucia atelier
+            will now begin preparing your pair. You can
+            follow your order status from your account.
           </p>
 
           <div style="

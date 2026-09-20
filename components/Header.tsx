@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatINR, getProducts, type Product } from "@/lib/products";
+import { supabase } from "@/lib/supabase";
 
 export default function Header() {
   const [count, setCount] = useState(0);
@@ -14,6 +15,83 @@ export default function Header() {
   const [productsLoaded, setProductsLoaded] = useState(false);
 
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const [isAdmin, setIsAdmin] = useState(false);
+  /* =========================================
+     ADMIN CHECK
+  ========================================= */
+
+  useEffect(() => {
+    let mounted = true;
+
+    const checkAdmin = async () => {
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError || !user) {
+          if (mounted) {
+            setIsAdmin(false);
+          }
+
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("is_admin")
+          .eq("id", user.id)
+          .single();
+
+        if (profileError) {
+          console.error(
+            "Unable to check admin status:",
+            profileError
+          );
+
+          if (mounted) {
+            setIsAdmin(false);
+          }
+
+          return;
+        }
+
+        if (mounted) {
+          const admin = profile?.is_admin === true;
+
+          setIsAdmin(admin);
+
+          if (!admin) {
+          }
+        }
+      } catch (error) {
+        console.error(
+          "Unable to check admin status:",
+          error
+        );
+
+        if (mounted) {
+          setIsAdmin(false);
+        }
+      }
+    };
+
+    checkAdmin();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      checkAdmin();
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
 
   /* =========================================
      CART COUNT
@@ -49,7 +127,10 @@ export default function Header() {
 
     return () => {
       window.removeEventListener("storage", update);
-      window.removeEventListener("cl-cart-updated", update);
+      window.removeEventListener(
+        "cl-cart-updated",
+        update
+      );
     };
   }, []);
 
@@ -67,7 +148,10 @@ export default function Header() {
         setProducts(data);
         setProductsLoaded(true);
       } catch (error) {
-        console.error("Unable to load products:", error);
+        console.error(
+          "Unable to load products:",
+          error
+        );
       }
     };
 
@@ -192,20 +276,16 @@ export default function Header() {
         ====================================== */}
 
         <div className="header-actions">
-          {/* SEARCH BUTTON */}
+          {/* SEARCH */}
 
           <button
             type="button"
             className="header-icon-button"
             aria-label={
-              searchOpen
-                ? "Close search"
-                : "Open search"
+              searchOpen ? "Close search" : "Open search"
             }
             title={
-              searchOpen
-                ? "Close search"
-                : "Search"
+              searchOpen ? "Close search" : "Search"
             }
             onClick={() => {
               setSearchOpen((current) => !current);
@@ -231,7 +311,6 @@ export default function Header() {
               aria-hidden="true"
             >
               <circle cx="11" cy="11" r="7" />
-
               <path d="m20 20-4-4" />
             </svg>
           </button>
@@ -279,6 +358,18 @@ export default function Header() {
           >
             Bag ({count})
           </Link>
+
+          {/* ADMIN - DIRECT LINK */}
+
+          {isAdmin && (
+            <Link
+              href="/admin"
+              aria-label="Admin"
+              onClick={closeMobileMenu}
+            >
+              Admin
+            </Link>
+          )}
         </div>
       </div>
 
@@ -350,6 +441,18 @@ export default function Header() {
           >
             Bag ({count})
           </Link>
+
+          {/* ADMIN - DIRECT LINK, LAST ON MOBILE */}
+
+          {isAdmin && (
+            <Link
+              href="/admin"
+              onClick={closeMobileMenu}
+            >
+              Admin
+            </Link>
+          )}
+
         </nav>
       </div>
 
@@ -401,9 +504,7 @@ export default function Header() {
             </button>
           </form>
 
-          {/* =================================
-              SEARCH RESULTS
-          ================================== */}
+          {/* SEARCH RESULTS */}
 
           {query.length > 0 && (
             <div className="search-suggestions">
@@ -413,59 +514,52 @@ export default function Header() {
                     Matching designs
                   </p>
 
-                  {suggestions.map(
-                    (product) => (
-                      <Link
-                        key={product.id}
-                        href={`/product/${product.slug}`}
-                        className="search-suggestion"
-                        onClick={() => {
-                          setSearchOpen(false);
-                          setSearchQuery("");
-                        }}
-                      >
-                        <div className="search-suggestion-image">
-                          {product.image_url ? (
-                            <img
-                              src={
-                                product.image_url
-                              }
-                              alt={
-                                product.name
-                              }
-                            />
-                          ) : (
-                            <span>
-                              CIRCA LUCIA
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="search-suggestion-info">
-                          <strong>
-                            {product.name}
-                          </strong>
-
+                  {suggestions.map((product) => (
+                    <Link
+                      key={product.id}
+                      href={`/product/${product.slug}`}
+                      className="search-suggestion"
+                      onClick={() => {
+                        setSearchOpen(false);
+                        setSearchQuery("");
+                      }}
+                    >
+                      <div className="search-suggestion-image">
+                        {product.image_url ? (
+                          <img
+                            src={product.image_url}
+                            alt={product.name}
+                          />
+                        ) : (
                           <span>
-                            {product.collection ||
-                              "Circa Lucia"}
+                            CIRCA LUCIA
                           </span>
-                        </div>
+                        )}
+                      </div>
 
-                        <strong className="search-suggestion-price">
-                          {formatINR(
-                            product.price
-                          )}
+                      <div className="search-suggestion-info">
+                        <strong>
+                          {product.name}
                         </strong>
-                      </Link>
-                    )
-                  )}
+
+                        <span>
+                          {product.collection ||
+                            "Circa Lucia"}
+                        </span>
+                      </div>
+
+                      <strong className="search-suggestion-price">
+                        {formatINR(
+                          product.price
+                        )}
+                      </strong>
+                    </Link>
+                  ))}
                 </>
               ) : (
                 <div className="search-no-results">
                   <p>
-                    No matching designs
-                    found.
+                    No matching designs found.
                   </p>
 
                   <span>

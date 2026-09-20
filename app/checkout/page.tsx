@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { formatINR } from "@/lib/products";
 import { supabase } from "@/lib/supabase";
 
@@ -9,10 +10,13 @@ type CartItem = {
   slug: string;
   name: string;
   price: number;
+  shipping_charge?: number;
+  tax_percent?: number;
   qty: number;
   variantId?: string;
   size?: string;
   stockQuantity?: number;
+  image?: string;
 };
 
 type SavedAddress = {
@@ -40,6 +44,7 @@ type OrderResult = {
 };
 
 export default function Checkout() {
+  const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
@@ -102,7 +107,78 @@ export default function Checkout() {
           return;
         }
 
-        setCart(savedCart);
+        /*
+         * Refresh product-level checkout charges directly from Supabase.
+         *
+         * This makes the products table the source of truth for shipping
+         * and tax, so older cart items also receive the current Admin values.
+         */
+        const cartSlugs = Array.from(
+          new Set(
+            savedCart
+              .map((item: CartItem) => item.slug)
+              .filter(Boolean)
+          )
+        );
+
+        const { data: checkoutProducts, error: checkoutProductsError } =
+          await supabase
+            .from("products")
+            .select("slug, shipping_charge, tax_percent")
+            .in("slug", cartSlugs);
+
+        if (checkoutProductsError) {
+          console.error(
+            "Unable to load current shipping/tax values:",
+            checkoutProductsError
+          );
+
+          setErrorMessage(
+            "We couldn't load the current shipping and tax amounts. Please refresh checkout and try again."
+          );
+
+          setLoading(false);
+          return;
+        }
+
+        const checkoutProductMap = new Map(
+          (checkoutProducts || []).map((product: any) => [
+            product.slug,
+            product,
+          ])
+        );
+
+        const refreshedCart: CartItem[] = savedCart.map(
+          (item: CartItem) => {
+            const currentProduct = checkoutProductMap.get(
+              item.slug
+            ) as
+              | {
+                  slug: string;
+                  shipping_charge: number | null;
+                  tax_percent: number | null;
+                }
+              | undefined;
+
+            return {
+              ...item,
+              shipping_charge: Number(
+                currentProduct?.shipping_charge ?? 0
+              ),
+              tax_percent: Number(
+                currentProduct?.tax_percent ?? 0
+              ),
+            };
+          }
+        );
+
+        setCart(refreshedCart);
+
+        // Keep local cart synchronized with the current Admin values.
+        localStorage.setItem(
+          "cl-cart",
+          JSON.stringify(refreshedCart)
+        );
 
         const { data: profile } =
           await supabase
@@ -170,6 +246,36 @@ export default function Checkout() {
         Number(item.qty || 0),
     0
   );
+
+  const displayedShipping = cart.reduce(
+    (sum, item) =>
+      sum +
+      Number(item.shipping_charge || 0) *
+        Number(item.qty || 0),
+    0
+  );
+
+  const displayedTax = cart.reduce(
+    (sum, item) => {
+      const lineSubtotal =
+        Number(item.price || 0) *
+        Number(item.qty || 0);
+
+      const taxPercent =
+        Number(item.tax_percent || 0);
+
+      return (
+        sum +
+        (lineSubtotal * taxPercent) / 100
+      );
+    },
+    0
+  );
+
+  const displayedTotal =
+    displayedSubtotal +
+    displayedShipping +
+    displayedTax;
 
   const totalItems = cart.reduce(
     (sum, item) =>
@@ -356,6 +462,10 @@ export default function Checkout() {
                 slug: item.slug,
                 name: item.name,
                 price: item.price,
+                shipping_charge:
+                  Number(item.shipping_charge || 0),
+                tax_percent:
+                  Number(item.tax_percent || 0),
                 qty: item.qty,
                 variantId:
                   item.variantId,
@@ -423,115 +533,21 @@ export default function Checkout() {
       }
 
       /*
-       * The order has been successfully created.
+       * The pending order has been created successfully.
+       *
+       * Do not clear the cart and do not send the order-confirmation
+       * email yet. The customer must complete Razorpay payment first.
        */
       const createdOrder =
         data as OrderResult;
 
-      console.log(
-        "CHECKOUT: Order created, starting email request",
-        createdOrder
+      router.push(
+        `/payment/${encodeURIComponent(
+          createdOrder.order_id
+        )}`
       );
 
-      setOrder(createdOrder);
-
-      /*
-       * Send the order confirmation email.
-       *
-       * IMPORTANT:
-       * If the email fails, the order remains
-       * successfully created.
-       */
-      const {
-        data: sessionData,
-      } =
-        await supabase.auth.getSession();
-
-      const accessToken =
-        sessionData.session
-          ?.access_token;
-
-      console.log(
-        "CHECKOUT: Session checked",
-        {
-          hasAccessToken:
-            Boolean(accessToken),
-          orderId:
-            createdOrder.order_id,
-        }
-      );
-
-      if (accessToken) {
-        try {
-          console.log(
-            "CHECKOUT: Calling order confirmation email API"
-          );
-
-          const emailResponse =
-            await fetch(
-              "/api/email/order-confirmation",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type":
-                    "application/json",
-                },
-                body: JSON.stringify({
-                  orderId:
-                    createdOrder.order_id,
-                  accessToken:
-                    accessToken,
-                }),
-              }
-            );
-
-          console.log(
-            "CHECKOUT: Email API response",
-            emailResponse.status
-          );
-
-          const emailResult =
-            await emailResponse.json();
-
-          console.log(
-            "CHECKOUT: Email API result",
-            emailResult
-          );
-
-          if (!emailResponse.ok) {
-            console.error(
-              "Order confirmation email failed:",
-              emailResult
-            );
-          } else {
-            console.log(
-              "Order confirmation email sent successfully:",
-              emailResult
-            );
-          }
-        } catch (emailError) {
-          console.error(
-            "Unable to send order confirmation email:",
-            emailError
-          );
-        }
-      } else {
-        console.error(
-          "CHECKOUT: Unable to send order confirmation email: No access token found."
-        );
-      }
-
-      /*
-       * Clear the cart only after the order
-       * has been successfully created.
-       */
-      localStorage.removeItem(
-        "cl-cart"
-      );
-
-      window.dispatchEvent(
-        new Event("cl-cart-updated")
-      );
+      return;
     } catch (error) {
       console.error(
         "Unable to place order:",
@@ -694,8 +710,8 @@ export default function Checkout() {
   }
 
   return (
-    <section className="section checkout-page">
-      <div>
+    <section className="section checkout-page checkout-luxury">
+      <div className="checkout-details">
         <p className="eyebrow">
           CHECKOUT
         </p>
@@ -750,7 +766,7 @@ export default function Checkout() {
           />
 
           {savedAddresses.length > 0 && (
-            <div style={{ marginBottom: "22px" }}>
+            <div className="delivery-addresses" style={{ marginBottom: "22px" }}>
               <p className="eyebrow" style={{ marginBottom: "12px" }}>DELIVERY ADDRESS</p>
               <div style={{ display: "grid", gap: "10px" }}>
                 {savedAddresses.map((saved) => {
@@ -761,6 +777,7 @@ export default function Checkout() {
                       type="button"
                       onClick={() => chooseAddress(saved)}
                       aria-pressed={isSelected}
+                      className="saved-address-card"
                       style={{
                         display: "block", width: "100%", textAlign: "left",
                         padding: "14px 16px", cursor: "pointer",
@@ -912,6 +929,7 @@ export default function Checkout() {
             (item, index) => (
               <div
                 key={`${item.slug}-${item.variantId ?? "default"}-${index}`}
+                className="summary-item"
                 style={{
                   display:
                     "flex",
@@ -1011,7 +1029,9 @@ export default function Checkout() {
           </span>
 
           <span>
-            To be calculated
+            {formatINR(
+              displayedShipping
+            )}
           </span>
         </div>
 
@@ -1021,7 +1041,9 @@ export default function Checkout() {
           </span>
 
           <span>
-            To be calculated
+            {formatINR(
+              displayedTax
+            )}
           </span>
         </div>
 
@@ -1038,12 +1060,12 @@ export default function Checkout() {
 
         <div className="billing-total">
           <span>
-            Current total
+            Total
           </span>
 
           <strong>
             {formatINR(
-              displayedSubtotal
+              displayedTotal
             )}
           </strong>
         </div>
@@ -1110,6 +1132,243 @@ export default function Checkout() {
           Return to bag
         </Link>
       </aside>
+
+      <style jsx>{`
+        /* -------------------------------------------------------
+           CHECKOUT — LUXURY RESPONSIVE UI
+           Visual-only rules. Checkout/order logic is unchanged.
+           ------------------------------------------------------- */
+
+        .checkout-luxury {
+          display: grid;
+          grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.9fr);
+          gap: clamp(56px, 8vw, 148px);
+          align-items: start;
+          max-width: 1640px;
+          margin: 0 auto;
+          padding-top: 24px;
+          padding-bottom: 72px;
+        }
+
+        .checkout-details {
+          min-width: 0;
+        }
+
+        .checkout-details :global(h1) {
+          margin: 20px 0 26px;
+          font-size: clamp(58px, 6.1vw, 104px);
+          line-height: 0.94;
+          font-weight: 400;
+          letter-spacing: -0.035em;
+        }
+
+        .checkout-details :global(.page-intro) {
+          margin: 0;
+          max-width: 620px;
+          color: #716b64;
+          font-size: 17px;
+          line-height: 1.65;
+        }
+
+        .checkout-details :global(.input) {
+          width: 100%;
+          min-height: 62px;
+          box-sizing: border-box;
+          margin-bottom: 14px;
+          padding: 16px 18px;
+          border: 1px solid #d9d0c4;
+          border-radius: 0;
+          background: transparent;
+          color: #141210;
+          font-family: inherit;
+          font-size: 15px;
+          outline: none;
+          transition:
+            border-color 180ms ease,
+            background 180ms ease,
+            box-shadow 180ms ease;
+        }
+
+        .checkout-details :global(.input:focus) {
+          border-color: #141210;
+          background: #fffdf9;
+          box-shadow: 0 0 0 1px #141210;
+        }
+
+        .checkout-details :global(.two-inputs) {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
+        }
+
+        .delivery-addresses {
+          margin-top: 8px;
+          padding-top: 2px;
+        }
+
+        .saved-address-card {
+          transition:
+            background 180ms ease,
+            border-color 180ms ease,
+            transform 180ms ease;
+        }
+
+        .saved-address-card:hover {
+          transform: translateY(-1px);
+        }
+
+        .summary {
+          position: sticky;
+          top: 32px;
+          min-width: 0;
+          padding-top: 27px;
+          border-top: 1px solid #141210;
+        }
+
+        .summary :global(.eyebrow) {
+          margin: 0 0 34px;
+        }
+
+        .summary :global(h2) {
+          margin: 0 0 36px;
+          font-size: clamp(38px, 3.2vw, 56px);
+          line-height: 1;
+          font-weight: 400;
+          letter-spacing: -0.025em;
+        }
+
+        .summary-item {
+          align-items: flex-start;
+          padding: 0;
+        }
+
+        .summary-item > div {
+          min-width: 0;
+        }
+
+        .summary-item > :global(strong) {
+          flex: 0 0 auto;
+          white-space: nowrap;
+          font-size: 14px;
+          font-weight: 500;
+        }
+
+        .summary-item div > :global(strong) {
+          display: block;
+          font-size: 14px;
+          line-height: 1.35;
+          font-weight: 500;
+          letter-spacing: 0.01em;
+        }
+
+        .summary :global(.billing-line) {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: baseline;
+          column-gap: 28px;
+          width: 100%;
+          margin: 0;
+          padding: 5px 0;
+          font-size: 14px;
+          line-height: 1.45;
+        }
+
+        .summary :global(.billing-line > span:last-child) {
+          text-align: right;
+          white-space: nowrap;
+        }
+
+        .summary :global(.billing-line.muted) {
+          color: #716b64;
+        }
+
+        .summary :global(.billing-total) {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: baseline;
+          column-gap: 28px;
+          width: 100%;
+          font-size: 17px;
+          line-height: 1.4;
+        }
+
+        .summary :global(.billing-total strong) {
+          text-align: right;
+          white-space: nowrap;
+          font-size: 20px;
+          font-weight: 500;
+        }
+
+        .summary :global(.small-note) {
+          max-width: 470px;
+          color: #8a7767;
+          font-size: 11px;
+          line-height: 1.55;
+        }
+
+        .summary :global(.button) {
+          min-height: 56px;
+          letter-spacing: 0.16em;
+        }
+
+        @media (max-width: 1020px) {
+          .checkout-luxury {
+            grid-template-columns: 1fr;
+            gap: 56px;
+            max-width: 860px;
+          }
+
+          .summary {
+            position: static;
+            top: auto;
+          }
+
+          .checkout-details :global(h1) {
+            font-size: clamp(58px, 10vw, 90px);
+          }
+        }
+
+        @media (max-width: 640px) {
+          .checkout-luxury {
+            gap: 42px;
+            padding-top: 10px;
+            padding-bottom: 48px;
+          }
+
+          .checkout-details :global(h1) {
+            margin-top: 16px;
+            margin-bottom: 20px;
+            font-size: clamp(48px, 16vw, 70px);
+          }
+
+          .checkout-details :global(.page-intro) {
+            font-size: 15px;
+          }
+
+          .checkout-details :global(.two-inputs) {
+            grid-template-columns: 1fr;
+            gap: 0;
+          }
+
+          .summary {
+            padding-top: 22px;
+          }
+
+          .summary :global(.eyebrow) {
+            margin-bottom: 26px;
+          }
+
+          .summary :global(h2) {
+            margin-bottom: 30px;
+            font-size: 40px;
+          }
+
+          .summary :global(.billing-line),
+          .summary :global(.billing-total) {
+            column-gap: 16px;
+          }
+        }
+      `}</style>
     </section>
   );
 }

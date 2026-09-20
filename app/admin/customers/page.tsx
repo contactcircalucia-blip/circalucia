@@ -148,11 +148,7 @@ function SectionButton({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full rounded-xl px-4 py-3 text-left text-sm font-medium transition ${
-        active
-          ? "bg-[#332920] text-white"
-          : "bg-white text-[#66594d] hover:bg-[#f4eee7]"
-      }`}
+      className={active ? "active" : ""}
     >
       {children}
     </button>
@@ -608,46 +604,146 @@ export default function AdminCustomersPage() {
   }
 
   return (
-    <main className={styles.page}>
-      <div className="mx-auto max-w-5xl space-y-6">
+    <main className="cl-customers-page">
+      <style jsx global>{`
+        .cl-customers-page {
+          min-height: 100vh;
+          background: #f7f4ef;
+          color: #28231f;
+          padding: 42px 28px 70px;
+        }
+        .cl-customers-shell {
+          width: min(1180px, 100%);
+          margin: 0 auto;
+        }
+        .cl-customers-page * { box-sizing: border-box; }
+        .cl-topbar {
+          display:flex; align-items:flex-end; justify-content:space-between;
+          gap:20px; flex-wrap:wrap; margin-bottom:22px;
+        }
+        .cl-back { color:#74685d; text-decoration:none; font-size:14px; }
+        .cl-back:hover { color:#17130f; }
+        .cl-refresh, .cl-edit, .cl-secondary {
+          border:1px solid #d9cbbd; background:#fff; color:#5f5145;
+          padding:11px 17px; font:inherit; font-size:13px; cursor:pointer;
+        }
+        .cl-refresh:hover, .cl-edit:hover, .cl-secondary:hover { background:#f1e9df; }
+        .cl-heading { margin:0; }
+        .cl-admin-nav {
+          display:flex; align-items:center; gap:28px; flex-wrap:wrap;
+          border-top:1px solid #e5dbd0; border-bottom:1px solid #e5dbd0;
+          padding:14px 0; margin-bottom:26px;
+        }
+        .cl-admin-nav a {
+          color:#28231f; text-decoration:none; font-size:12px;
+          letter-spacing:.08em; text-transform:uppercase;
+        }
+        .cl-admin-nav a.active {
+          text-decoration:underline; text-underline-offset:6px; font-weight:600;
+        }
+        .cl-kicker { margin:0 0 8px; font-size:11px; letter-spacing:.17em; text-transform:uppercase; color:#967d68; }
+        .cl-heading h1 { margin:0; font-family:"Cormorant Garamond", Georgia, serif; font-size:52px; font-weight:500; }
+        .cl-panel { border:1px solid #e1d6ca; background:#fff; }
+        .cl-directory-head {
+          display:flex; justify-content:space-between; align-items:center;
+          gap:22px; flex-wrap:wrap; padding:22px 24px; border-bottom:1px solid #eee6dd;
+        }
+        .cl-directory-head strong { font-size:20px; font-weight:500; }
+        .cl-search {
+          width:min(420px,100%); border:1px solid #ded2c6; background:#fcfaf7;
+          padding:13px 15px; font:inherit; font-size:14px; outline:none;
+        }
+        .cl-search:focus { border-color:#9c8169; }
+        .cl-customer-row {
+          width:100%; border:0; border-bottom:1px solid #eee6dd; background:#fff;
+          display:grid; grid-template-columns:48px minmax(0,1fr) auto;
+          align-items:center; gap:16px; padding:18px 24px; text-align:left; cursor:pointer;
+          color:#28231f; font:inherit;
+        }
+        .cl-customer-row:hover, .cl-customer-row.active { background:#f8f3ed; }
+        .cl-avatar {
+          width:44px; height:44px; border-radius:50%; display:flex; align-items:center;
+          justify-content:center; background:#eee5da; color:#7d6855;
+          font-family:"Cormorant Garamond", Georgia, serif; font-size:18px;
+        }
+        .cl-customer-name { display:block; font-size:15px; font-weight:600; }
+        .cl-customer-phone { display:block; margin-top:4px; color:#82776d; font-size:13px; }
+        .cl-expanded { padding:26px; background:#fcfaf7; border-bottom:1px solid #e9dfd5; }
+        .cl-profile-head {
+          display:flex; justify-content:space-between; align-items:flex-start; gap:18px;
+          flex-wrap:wrap; padding:22px; border:1px solid #e6ddd3; background:#fff; margin-bottom:22px;
+        }
+        .cl-profile-head h2 { margin:0; font-family:"Cormorant Garamond", Georgia, serif; font-size:30px; font-weight:500; }
+        .cl-profile-head p { margin:6px 0 0; color:#82776d; font-size:12px; }
+        .cl-actions { display:flex; gap:9px; flex-wrap:wrap; }
+        .cl-call, .cl-primary {
+          display:inline-flex; align-items:center; justify-content:center; text-decoration:none;
+          border:1px solid #211a16; background:#211a16; color:#fff;
+          padding:11px 18px; font:inherit; font-size:13px; cursor:pointer;
+        }
+        .cl-call:hover, .cl-primary:hover { background:#3a2f28; }
+        .cl-info-card { border:1px solid #e6ddd3; background:#fff; margin-bottom:22px; overflow:hidden; }
+        .cl-card-title { padding:18px 22px; border-bottom:1px solid #eee6dd; }
+        .cl-card-title h3 { margin:4px 0 0; font-family:"Cormorant Garamond", Georgia, serif; font-size:27px; font-weight:500; }
+        .cl-info-table { width:100%; border-collapse:collapse; }
+        .cl-info-table td { padding:15px 22px; border-bottom:1px solid #f0e9e2; vertical-align:top; font-size:14px; }
+        .cl-info-table td:first-child { width:190px; color:#74685d; font-weight:500; }
+        .cl-detail-grid { display:grid; grid-template-columns:210px minmax(0,1fr); gap:22px; }
+        .cl-section-nav { display:flex; flex-direction:column; gap:8px; }
+        .cl-section-nav button {
+          width:100%; border:0; padding:13px 15px; text-align:left; font:inherit;
+          font-size:13px; cursor:pointer; background:#fff; color:#66594d;
+        }
+        .cl-section-nav button.active { background:#332920; color:#fff; }
+        .cl-record { border:1px solid #e6ddd3; background:#fff; padding:22px; min-width:0; }
+        .cl-message { padding:14px 16px; margin-bottom:18px; border:1px solid #dfd4c9; background:#fff; font-size:13px; }
+        .cl-error { border-color:#e8b8b0; background:#fff3f1; color:#7c3f30; }
+        .cl-footer { border-top:1px solid #e5dbd0; margin-top:28px; padding-top:16px; color:#a09589; font-size:12px; }
+        .cl-customers-page input { border-radius:0 !important; }
+        @media (max-width: 760px) {
+          .cl-customers-page { padding:28px 14px 50px; }
+          .cl-heading h1 { font-size:42px; }
+          .cl-directory-head, .cl-customer-row, .cl-expanded { padding-left:16px; padding-right:16px; }
+          .cl-detail-grid { grid-template-columns:1fr; }
+          .cl-section-nav { flex-direction:row; overflow:auto; }
+          .cl-section-nav button { min-width:150px; }
+          .cl-info-table td:first-child { width:125px; }
+        }
+      `}</style>
+      <div className="cl-customers-shell">
 
-        {/* TOP NAVIGATION */}
+        {/* ADMIN HEADER */}
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link
-            href="/admin"
-            className="text-sm text-[#74685d] hover:text-black"
-          >
-            ← Admin dashboard
-          </Link>
+        <div className="cl-topbar">
+          <header className="cl-heading">
+            <p className="cl-kicker">
+              Circa Lucia · Administration
+            </p>
+            <h1>Customers</h1>
+          </header>
 
           <button
             type="button"
             onClick={() => void loadCustomers()}
-            className="rounded-lg border border-[#d9cbbd] bg-white px-4 py-2 text-sm transition hover:bg-[#f1e9df]"
+            className="cl-refresh"
           >
             Refresh list
           </button>
         </div>
 
-        {/* HEADER */}
-
-        <header className="border-b border-[#e5dbd0] pb-5">
-          <p className={styles.label}>
-            Circa Lucia · Admin
-          </p>
-
-          <h1 className="mt-2 font-serif text-4xl sm:text-5xl">
-            Customers
-          </h1>
-        </header>
+        <nav className="cl-admin-nav" aria-label="Admin sections">
+          <Link href="/admin">Orders</Link>
+          <Link href="/admin/customers" className="active">Customers</Link>
+          <Link href="/admin/management">Bespoke &amp; Catalogue</Link>
+          <Link href="/admin/stock">Stock Management</Link>
+        </nav>
 
         {/* ERROR */}
 
         {error && (
           <div
             role="alert"
-            className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"
+            className="cl-message cl-error"
           >
             {error}
           </div>
@@ -658,7 +754,7 @@ export default function AdminCustomersPage() {
         {saveMessage && (
           <div
             role="status"
-            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
+            className="cl-message"
           >
             {saveMessage}
           </div>
@@ -666,9 +762,9 @@ export default function AdminCustomersPage() {
 
         {/* CUSTOMER DIRECTORY */}
 
-        <section className={`${styles.panel} overflow-hidden`}>
+        <section className="cl-panel">
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eee6dd] p-4 sm:p-5">
+          <div className="cl-directory-head">
             <div>
               <p className={styles.label}>
                 Customer directory
@@ -689,7 +785,7 @@ export default function AdminCustomersPage() {
               }
               placeholder="Search name, phone or ID"
               aria-label="Search customers"
-              className="w-full rounded-xl border border-[#e3d9ce] bg-[#fcfaf7] px-4 py-3 text-sm outline-none transition focus:border-[#ad9278] sm:max-w-sm"
+              className="cl-search"
             />
           </div>
 
@@ -718,25 +814,21 @@ export default function AdminCustomersPage() {
                       onClick={() =>
                         void openCustomer(customer)
                       }
-                      className={`flex w-full items-center gap-3 px-4 py-4 text-left transition sm:px-5 ${
-                        isExpanded
-                          ? "bg-[#f6efe7]"
-                          : "bg-white hover:bg-[#fcfaf7]"
-                      }`}
+                      className={`cl-customer-row ${isExpanded ? "active" : ""}`}
                     >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#eee5da] font-serif text-lg text-[#7d6855]">
+                      <span className="cl-avatar">
                         {initials(
                           customer.full_name
                         )}
                       </span>
 
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold">
+                        <span className="cl-customer-name">
                           {customer.full_name ||
                             "Unnamed customer"}
                         </span>
 
-                        <span className="mt-0.5 block truncate text-xs text-[#82776d]">
+                        <span className="cl-customer-phone">
                           {customer.phone ||
                             "Phone not provided"}
                         </span>
@@ -757,7 +849,7 @@ export default function AdminCustomersPage() {
                     {/* EXPANDED CUSTOMER */}
 
                     {isExpanded && (
-                      <div className="border-t border-[#e9dfd5] bg-[#fcfaf7] p-4 sm:p-6">
+                      <div className="cl-expanded">
 
                         {detailLoading ? (
                           <div className="space-y-3 animate-pulse">
@@ -769,7 +861,7 @@ export default function AdminCustomersPage() {
 
                             {/* CUSTOMER HEADER */}
 
-                            <div className="flex flex-wrap items-start justify-between gap-4 rounded-xl border border-[#e6ddd3] bg-white p-4 sm:p-5">
+                            <div className="cl-profile-head">
 
                               <div className="min-w-0">
                                 <h2 className="break-words font-serif text-2xl">
@@ -785,12 +877,22 @@ export default function AdminCustomersPage() {
                                 </p>
                               </div>
 
-                              <div className="flex flex-wrap gap-2">
+                              <div className="cl-actions">
+                                {selectedCustomer.phone && (
+                                  <a
+                                    href={`tel:${selectedCustomer.phone.replace(/[^+\\d]/g, "")}`}
+                                    className="cl-call"
+                                    aria-label={`Call ${selectedCustomer.full_name || "customer"}`}
+                                  >
+                                    Call
+                                  </a>
+                                )}
+
                                 {!editing ? (
                                   <button
                                     type="button"
                                     onClick={startEditing}
-                                    className="rounded-lg border border-[#d4c4b4] bg-white px-4 py-2 text-sm font-medium text-[#715e4c] transition hover:bg-[#f4eee7]"
+                                    className="cl-edit"
                                   >
                                     Edit details
                                   </button>
@@ -813,7 +915,7 @@ export default function AdminCustomersPage() {
                                         void saveChanges()
                                       }
                                       disabled={saving}
-                                      className="rounded-lg bg-[#332920] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#211a16] disabled:opacity-50"
+                                      className="cl-primary"
                                     >
                                       {saving
                                         ? "Saving..."
@@ -826,9 +928,9 @@ export default function AdminCustomersPage() {
 
                             {/* CUSTOMER INFORMATION — TABLE */}
 
-                            <div className={`${styles.panel} overflow-hidden`}>
+                            <div className="cl-info-card">
 
-                              <div className="border-b border-[#eee6dd] px-4 py-4 sm:px-5">
+                              <div className="cl-card-title">
                                 <p className={styles.label}>
                                   Customer information
                                 </p>
@@ -839,7 +941,7 @@ export default function AdminCustomersPage() {
                               </div>
 
                               <div className="overflow-x-auto">
-                                <table className="w-full min-w-[600px] text-left">
+                                <table className="cl-info-table">
                                   <thead>
                                     <tr className="border-b border-[#eee6dd] bg-[#fcfaf7]">
                                       <th className="w-[190px] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#938579] sm:px-5">
@@ -928,10 +1030,18 @@ export default function AdminCustomersPage() {
                                             className="w-full max-w-lg rounded-lg border border-[#ddd2c6] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#a88c71]"
                                           />
                                         ) : (
-                                          <span className="text-sm font-medium">
-                                            {selectedCustomer.phone ||
-                                              "Not provided"}
-                                          </span>
+                                          selectedCustomer.phone ? (
+                                            <a
+                                              href={`tel:${selectedCustomer.phone.replace(/[^+\\d]/g, "")}`}
+                                              className="text-sm font-medium underline decoration-[#cdb9a5] underline-offset-4 hover:text-[#715e4c]"
+                                            >
+                                              {selectedCustomer.phone}
+                                            </a>
+                                          ) : (
+                                            <span className="text-sm font-medium">
+                                              Not provided
+                                            </span>
+                                          )
                                         )}
                                       </td>
                                     </tr>
@@ -1014,11 +1124,11 @@ export default function AdminCustomersPage() {
 
                             {/* SECTION NAVIGATION */}
 
-                            <div className="grid gap-5 md:grid-cols-[190px_minmax(0,1fr)]">
+                            <div className="cl-detail-grid">
 
                               <nav
                                 aria-label="Customer records"
-                                className="flex gap-2 overflow-x-auto md:flex-col md:overflow-visible"
+                                className="cl-section-nav"
                               >
                                 <SectionButton
                                   active={
@@ -1062,7 +1172,7 @@ export default function AdminCustomersPage() {
                                 </SectionButton>
                               </nav>
 
-                              <div className={`${styles.panel} min-w-0 p-4 sm:p-6`}>
+                              <div className="cl-record">
 
                                 {/* ORDERS */}
 
@@ -1618,7 +1728,7 @@ export default function AdminCustomersPage() {
 
         </section>
 
-        <footer className="border-t border-[#e5dbd0] pt-4 text-xs text-[#a09589]">
+        <footer className="cl-footer">
           Circa Lucia · Private customer management
         </footer>
 

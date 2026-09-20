@@ -8,6 +8,7 @@ import {
 } from "@/lib/products";
 import ProductPurchase from "@/components/ProductPurchase";
 import SaveDesignButton from "@/components/SaveDesignButton";
+import { supabase } from "@/lib/supabase";
 
 export default async function ProductPage({
   params,
@@ -23,6 +24,13 @@ export default async function ProductPage({
   }
 
   const variants = await getProductVariants(product.id);
+
+  const { data: inventoryData } = await supabase
+    .from("product_inventory")
+    .select("id, product_id, size, stock_quantity")
+    .eq("product_id", product.id);
+
+  const inventory = inventoryData ?? [];
 
   return (
     <section className="product-page section">
@@ -69,6 +77,7 @@ export default async function ProductPage({
         <ProductPurchase
           product={product}
           variants={variants}
+          inventory={inventory}
         />
 
         <SaveDesignButton productId={product.id} />

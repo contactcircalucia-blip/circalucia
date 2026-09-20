@@ -13,6 +13,7 @@ type Item = {
   variantId?: string;
   size?: string;
   stockQuantity?: number;
+  image?: string;
 };
 
 type AppliedPromo = {
@@ -60,6 +61,20 @@ export default function Cart() {
 
   const [promoListLoaded, setPromoListLoaded] =
     useState(false);
+
+  function getCartImage(item: Item) {
+    if (item.image?.trim()) {
+      return item.image.trim();
+    }
+
+    const slug = item.slug.toLowerCase();
+
+    if (slug === "the-aurora") return "/products/aurora.jpg";
+    if (slug === "the-luciana") return "/products/luciana.jpg";
+    if (slug === "the-celeste") return "/products/celeste.jpg";
+
+    return "";
+  }
 
   const subtotal = items.reduce(
     (sum, item) =>
@@ -431,7 +446,18 @@ export default function Cart() {
                       aria-label={`View ${item.name}`}
                     >
                       <div className="mini-image">
-                        {item.name}
+                        {getCartImage(item) ? (
+                          <img
+                            src={getCartImage(item)}
+                            alt={item.name}
+                            className="mini-image-photo"
+                            onError={(event) => {
+                              event.currentTarget.style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <span>{item.name}</span>
+                        )}
                       </div>
                     </Link>
 
@@ -922,6 +948,23 @@ export default function Cart() {
           text-decoration: none;
           color: inherit;
           flex-shrink: 0;
+        }
+
+        .mini-image {
+          width: 122px;
+          height: 122px;
+          background: #f3eee6;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .mini-image-photo {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
         }
 
         .cart-item-details {

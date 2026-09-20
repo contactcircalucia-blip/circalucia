@@ -1,7 +1,7 @@
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 type Product = {
@@ -11,10 +11,13 @@ type Product = {
   collection: string | null;
   description: string | null;
   price: number;
+  shipping_charge: number;
+  tax_percent: number;
   material: string | null;
   heel_height: string | null;
   is_active: boolean;
   is_bespoke: boolean;
+  featured_home: boolean;
   image_url: string | null;
 };
 
@@ -61,11 +64,14 @@ const emptyProduct = {
   collection: "",
   description: "",
   price: "",
+  shipping_charge: "0",
+  tax_percent: "0",
   material: "",
   heel_height: "",
   image_url: "",
   is_active: true,
   is_bespoke: false,
+  featured_home: false,
 };
 
 function slugify(value: string) {
@@ -127,12 +133,11 @@ export default function AdminManagementPage() {
           return;
         }
 
-        const { data: profile, error: profileError } =
-          await supabase
-            .from("profiles")
-            .select("is_admin")
-            .eq("id", authData.user.id)
-            .maybeSingle();
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("is_admin")
+          .eq("id", authData.user.id)
+          .maybeSingle();
 
         if (profileError) throw profileError;
 
@@ -142,6 +147,7 @@ export default function AdminManagementPage() {
         }
       } catch (err) {
         console.error(err);
+
         if (alive) {
           setError("Could not verify admin access.");
           setChecked(true);
@@ -158,6 +164,7 @@ export default function AdminManagementPage() {
 
   useEffect(() => {
     if (!isAdmin) return;
+
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, tab]);
@@ -174,6 +181,7 @@ export default function AdminManagementPage() {
           .order("created_at", { ascending: false });
 
         if (error) throw error;
+
         setProducts((data || []) as Product[]);
       } else {
         const { data, error } = await supabase
@@ -182,6 +190,7 @@ export default function AdminManagementPage() {
           .order("created_at", { ascending: false });
 
         if (error) throw error;
+
         setRequests((data || []) as BespokeRequest[]);
       }
     } catch (err: any) {
@@ -192,8 +201,17 @@ export default function AdminManagementPage() {
     }
   }
 
+  const featuredCount = useMemo(
+    () =>
+      products.filter(
+        (product) => product.featured_home && product.is_active
+      ).length,
+    [products]
+  );
+
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
+
     if (!q) return products;
 
     return products.filter((p) =>
@@ -234,17 +252,21 @@ export default function AdminManagementPage() {
 
   function startEdit(product: Product) {
     setEditingId(product.id);
+
     setProductForm({
       name: product.name || "",
       slug: product.slug || "",
       collection: product.collection || "",
       description: product.description || "",
       price: String(product.price ?? ""),
+      shipping_charge: String(product.shipping_charge ?? 0),
+      tax_percent: String(product.tax_percent ?? 0),
       material: product.material || "",
       heel_height: product.heel_height || "",
       image_url: product.image_url || "",
       is_active: product.is_active,
       is_bespoke: product.is_bespoke,
+      featured_home: product.featured_home === true,
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -257,6 +279,7 @@ export default function AdminManagementPage() {
 
   async function saveProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     setSaving(true);
     setError("");
     setMessage("");
@@ -265,11 +288,49 @@ export default function AdminManagementPage() {
       const name = productForm.name.trim();
       const slug = slugify(productForm.slug || name);
       const price = Number(productForm.price);
+      const shippingCharge = Number(productForm.shipping_charge || 0);
+      const taxPercent = Number(productForm.tax_percent || 0);
 
-      if (!name) throw new Error("Enter a product name.");
-      if (!slug) throw new Error("Enter a valid product slug.");
+      if (!name) {
+        throw new Error("Enter a product name.");
+      }
+
+      if (!slug) {
+        throw new Error("Enter a valid product slug.");
+      }
+
       if (!Number.isFinite(price) || price < 0) {
         throw new Error("Enter a valid price.");
+      }
+
+      if (!Number.isFinite(shippingCharge) || shippingCharge < 0) {
+        throw new Error("Enter a valid shipping charge.");
+      }
+
+      if (
+        !Number.isFinite(taxPercent) ||
+        taxPercent < 0 ||
+        taxPercent > 100
+      ) {
+        throw new Error("Enter a valid tax percentage between 0 and 100.");
+      }
+
+      const currentProduct = editingId
+        ? products.find((product) => product.id === editingId)
+        : null;
+
+      const isAddingNewHomepageProduct =
+        productForm.featured_home &&
+        productForm.is_active &&
+        !(
+          currentProduct?.featured_home === true &&
+          currentProduct?.is_active === true
+        );
+
+      if (isAddingNewHomepageProduct && featuredCount >= 3) {
+        throw new Error(
+          "Maximum 3 homepage products allowed. Remove one existing homepage product first."
+        );
       }
 
       const payload = {
@@ -278,28 +339,51 @@ export default function AdminManagementPage() {
         collection: productForm.collection.trim() || null,
         description: productForm.description.trim() || null,
         price,
+        shipping_charge: shippingCharge,
+        tax_percent: taxPercent,
         material: productForm.material.trim() || null,
         heel_height: productForm.heel_height.trim() || null,
         image_url: productForm.image_url.trim() || null,
         is_active: productForm.is_active,
         is_bespoke: productForm.is_bespoke,
+        featured_home: productForm.featured_home,
         updated_at: new Date().toISOString(),
       };
 
       if (editingId) {
-        const { error } = await supabase
+        const { data: updatedProduct, error } = await supabase
           .from("products")
           .update(payload)
-          .eq("id", editingId);
+          .eq("id", editingId)
+          .select("*")
+          .single();
 
         if (error) throw error;
-        setMessage("Product updated.");
+
+        if (!updatedProduct) {
+          throw new Error("Product was not updated. Check the products update policy.");
+        }
+
+        setProducts((previous) =>
+          previous.map((product) =>
+            product.id === editingId
+              ? (updatedProduct as Product)
+              : product
+          )
+        );
+
+        setMessage(
+          `Product updated successfully. Image: ${
+            updatedProduct.image_url || "No image"
+          }`
+        );
       } else {
         const { error } = await supabase
           .from("products")
           .insert(payload);
 
         if (error) throw error;
+
         setMessage("Product added.");
       }
 
@@ -318,10 +402,27 @@ export default function AdminManagementPage() {
     setMessage("");
 
     try {
+      const nextActive = !product.is_active;
+
+      if (
+        nextActive &&
+        product.featured_home &&
+        featuredCount >= 3
+      ) {
+        const alreadyCounted =
+          product.featured_home && product.is_active;
+
+        if (!alreadyCounted) {
+          throw new Error(
+            "Maximum 3 homepage products allowed. Remove one existing homepage product first."
+          );
+        }
+      }
+
       const { error } = await supabase
         .from("products")
         .update({
-          is_active: !product.is_active,
+          is_active: nextActive,
           updated_at: new Date().toISOString(),
         })
         .eq("id", product.id);
@@ -329,7 +430,7 @@ export default function AdminManagementPage() {
       if (error) throw error;
 
       setMessage(
-        !product.is_active
+        nextActive
           ? "Product activated."
           : "Product deactivated."
       );
@@ -338,6 +439,48 @@ export default function AdminManagementPage() {
     } catch (err: any) {
       console.error(err);
       setError(err?.message || "Could not update product.");
+    }
+  }
+
+  async function toggleHomepageProduct(product: Product) {
+    setError("");
+    setMessage("");
+
+    try {
+      const nextFeatured = !product.featured_home;
+
+      if (nextFeatured && !product.is_active) {
+        throw new Error(
+          "Activate this product before displaying it on the homepage."
+        );
+      }
+
+      if (nextFeatured && featuredCount >= 3) {
+        throw new Error(
+          "Maximum 3 homepage products allowed. Remove one existing homepage product first."
+        );
+      }
+
+      const { error } = await supabase
+        .from("products")
+        .update({
+          featured_home: nextFeatured,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", product.id);
+
+      if (error) throw error;
+
+      setMessage(
+        nextFeatured
+          ? `${product.name} added to homepage.`
+          : `${product.name} removed from homepage.`
+      );
+
+      await loadData();
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "Could not update homepage product.");
     }
   }
 
@@ -403,39 +546,71 @@ export default function AdminManagementPage() {
             style={{
               display: "flex",
               justifyContent: "space-between",
-              alignItems: "center",
-              gap: 16,
+              alignItems: "flex-end",
+              gap: 20,
               flexWrap: "wrap",
-              marginBottom: 28,
+              marginBottom: 22,
             }}
           >
             <div>
               <p
                 style={{
+                  margin: "0 0 8px",
                   fontSize: 12,
-                  letterSpacing: "0.15em",
+                  letterSpacing: "0.16em",
                   textTransform: "uppercase",
                   color: "var(--muted)",
                 }}
               >
-                Circa Lucia
+                Circa Lucia · Administration
               </p>
               <h1
                 style={{
-                  fontFamily: "Cormorant Garamond, serif",
-                  fontSize: 46,
-                  fontWeight: 500,
                   margin: 0,
+                  fontFamily: "Cormorant Garamond, serif",
+                  fontSize: 48,
+                  fontWeight: 500,
                 }}
               >
-                Admin Management
+                Bespoke &amp; Catalogue
               </h1>
             </div>
 
-            <a href="/admin" style={{ color: "var(--ink)" }}>
-              ← Order management
-            </a>
+            <button
+              type="button"
+              onClick={loadData}
+              disabled={loading}
+              style={{
+                padding: "12px 18px",
+                border: "1px solid var(--line)",
+                background: "transparent",
+                color: "var(--ink)",
+                cursor: loading ? "not-allowed" : "pointer",
+                opacity: loading ? 0.6 : 1,
+              }}
+            >
+              {loading ? "Refreshing…" : "Refresh"}
+            </button>
           </div>
+
+          <nav
+            aria-label="Admin sections"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 28,
+              flexWrap: "wrap",
+              borderTop: "1px solid var(--line)",
+              borderBottom: "1px solid var(--line)",
+              padding: "14px 0",
+              marginBottom: 22,
+            }}
+          >
+            <Link href="/admin" style={{ color:"var(--ink)", textDecoration:"none", fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase" }}>Orders</Link>
+            <Link href="/admin/customers" style={{ color:"var(--ink)", textDecoration:"none", fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase" }}>Customers</Link>
+            <Link href="/admin/management" style={{ color:"var(--ink)", textDecoration:"underline", textUnderlineOffset:6, fontWeight:600, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase" }}>Bespoke &amp; Catalogue</Link>
+            <Link href="/admin/stock" style={{ color:"var(--ink)", textDecoration:"none", fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase" }}>Stock Management</Link>
+          </nav>
 
           <div
             style={{
@@ -449,8 +624,14 @@ export default function AdminManagementPage() {
               type="button"
               style={{
                 ...buttonStyle,
-                background: tab === "products" ? "var(--ink)" : "transparent",
-                color: tab === "products" ? "var(--paper)" : "var(--ink)",
+                background:
+                  tab === "products"
+                    ? "var(--ink)"
+                    : "transparent",
+                color:
+                  tab === "products"
+                    ? "var(--paper)"
+                    : "var(--ink)",
               }}
               onClick={() => {
                 setTab("products");
@@ -466,8 +647,14 @@ export default function AdminManagementPage() {
               type="button"
               style={{
                 ...buttonStyle,
-                background: tab === "bespoke" ? "var(--ink)" : "transparent",
-                color: tab === "bespoke" ? "var(--paper)" : "var(--ink)",
+                background:
+                  tab === "bespoke"
+                    ? "var(--ink)"
+                    : "transparent",
+                color:
+                  tab === "bespoke"
+                    ? "var(--paper)"
+                    : "var(--ink)",
               }}
               onClick={() => {
                 setTab("bespoke");
@@ -477,15 +664,6 @@ export default function AdminManagementPage() {
               }}
             >
               Bespoke requests ({requests.length})
-            </button>
-
-            <button
-              type="button"
-              style={{ ...buttonStyle, marginLeft: "auto" }}
-              onClick={loadData}
-              disabled={loading}
-            >
-              {loading ? "Refreshing…" : "Refresh"}
             </button>
           </div>
 
@@ -529,6 +707,27 @@ export default function AdminManagementPage() {
 
           {tab === "products" && (
             <>
+              <div
+                style={{
+                  marginBottom: 18,
+                  padding: "14px 16px",
+                  border: "1px solid var(--line)",
+                  background: "var(--cream)",
+                }}
+              >
+                <strong>Homepage products: {featuredCount}/3</strong>
+                <div
+                  style={{
+                    marginTop: 4,
+                    color: "var(--muted)",
+                    fontSize: 14,
+                  }}
+                >
+                  Choose up to three active products for the
+                  “Designed to be remembered.” section.
+                </div>
+              </div>
+
               <form
                 onSubmit={saveProduct}
                 style={{
@@ -558,7 +757,9 @@ export default function AdminManagementPage() {
                       setProductForm((p) => ({
                         ...p,
                         name: e.target.value,
-                        slug: editingId ? p.slug : slugify(e.target.value),
+                        slug: editingId
+                          ? p.slug
+                          : slugify(e.target.value),
                       }))
                     }
                     style={inputStyle}
@@ -588,6 +789,37 @@ export default function AdminManagementPage() {
                       setProductForm((p) => ({
                         ...p,
                         price: e.target.value,
+                      }))
+                    }
+                    style={inputStyle}
+                  />
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Shipping charge (INR)"
+                    value={productForm.shipping_charge}
+                    onChange={(e) =>
+                      setProductForm((p) => ({
+                        ...p,
+                        shipping_charge: e.target.value,
+                      }))
+                    }
+                    style={inputStyle}
+                  />
+
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    placeholder="Tax (%)"
+                    value={productForm.tax_percent}
+                    onChange={(e) =>
+                      setProductForm((p) => ({
+                        ...p,
+                        tax_percent: e.target.value,
                       }))
                     }
                     style={inputStyle}
@@ -690,6 +922,20 @@ export default function AdminManagementPage() {
                     />{" "}
                     Bespoke product
                   </label>
+
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={productForm.featured_home}
+                      onChange={(e) =>
+                        setProductForm((p) => ({
+                          ...p,
+                          featured_home: e.target.checked,
+                        }))
+                      }
+                    />{" "}
+                    Display on homepage
+                  </label>
                 </div>
 
                 <div style={{ display: "flex", gap: 10 }}>
@@ -744,22 +990,56 @@ export default function AdminManagementPage() {
                       <div>
                         <strong
                           style={{
-                            fontFamily: "Cormorant Garamond, serif",
+                            fontFamily:
+                              "Cormorant Garamond, serif",
                             fontSize: 24,
                           }}
                         >
                           {product.name}
                         </strong>
+
+                        <p
+                          style={{
+                            margin: "6px 0",
+                            color: "var(--muted)",
+                          }}
+                        >
+                          {product.slug} ·{" "}
+                          {product.collection ||
+                            "No collection"}
+                        </p>
+
+                        <p style={{ margin: "6px 0" }}>
+                          {money(product.price)} ·{" "}
+                          {product.material ||
+                            "Material not set"}
+                          {product.heel_height
+                            ? ` · ${product.heel_height}`
+                            : ""}
+                        </p>
+
                         <p style={{ margin: "6px 0", color: "var(--muted)" }}>
-                          {product.slug} · {product.collection || "No collection"}
+                          Shipping: {money(product.shipping_charge || 0)} · Tax:{" "}
+                          {Number(product.tax_percent || 0).toLocaleString("en-IN", {
+                            maximumFractionDigits: 2,
+                          })}
+                          %
                         </p>
+
                         <p style={{ margin: "6px 0" }}>
-                          {money(product.price)} · {product.material || "Material not set"}
-                          {product.heel_height ? ` · ${product.heel_height}` : ""}
-                        </p>
-                        <p style={{ margin: "6px 0" }}>
-                          <strong>{product.is_active ? "Active" : "Inactive"}</strong>
-                          {product.is_bespoke ? " · Bespoke" : ""}
+                          <strong>
+                            {product.is_active
+                              ? "Active"
+                              : "Inactive"}
+                          </strong>
+
+                          {product.is_bespoke
+                            ? " · Bespoke"
+                            : ""}
+
+                          {product.featured_home
+                            ? " · Homepage"
+                            : ""}
                         </p>
                       </div>
 
@@ -777,16 +1057,40 @@ export default function AdminManagementPage() {
                         >
                           Edit
                         </button>
+
                         <button
                           type="button"
-                          onClick={() => toggleProduct(product)}
+                          onClick={() =>
+                            toggleHomepageProduct(product)
+                          }
+                          style={{
+                            ...buttonStyle,
+                            background:
+                              product.featured_home
+                                ? "var(--cream)"
+                                : "transparent",
+                            color: "var(--ink)",
+                          }}
+                        >
+                          {product.featured_home
+                            ? "Remove from homepage"
+                            : "Display on homepage"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toggleProduct(product)
+                          }
                           style={{
                             ...buttonStyle,
                             background: "transparent",
                             color: "var(--ink)",
                           }}
                         >
-                          {product.is_active ? "Deactivate" : "Activate"}
+                          {product.is_active
+                            ? "Deactivate"
+                            : "Activate"}
                         </button>
                       </div>
                     </article>
@@ -801,7 +1105,9 @@ export default function AdminManagementPage() {
               <div style={{ marginBottom: 20, maxWidth: 320 }}>
                 <select
                   value={requestFilter}
-                  onChange={(e) => setRequestFilter(e.target.value)}
+                  onChange={(e) =>
+                    setRequestFilter(e.target.value)
+                  }
                   style={inputStyle}
                 >
                   <option value="all">All statuses</option>
@@ -840,14 +1146,21 @@ export default function AdminManagementPage() {
                         <div>
                           <h2
                             style={{
-                              fontFamily: "Cormorant Garamond, serif",
+                              fontFamily:
+                                "Cormorant Garamond, serif",
                               fontWeight: 500,
                               margin: 0,
                             }}
                           >
-                            {request.request_number || request.id}
+                            {request.request_number ||
+                              request.id}
                           </h2>
-                          <p style={{ color: "var(--muted)" }}>
+
+                          <p
+                            style={{
+                              color: "var(--muted)",
+                            }}
+                          >
                             {formatDate(request.created_at)}
                           </p>
                         </div>
@@ -855,7 +1168,9 @@ export default function AdminManagementPage() {
                         <div>
                           <strong>{request.name}</strong>
                           <div>{request.email}</div>
-                          <div>{request.phone || "No phone"}</div>
+                          <div>
+                            {request.phone || "No phone"}
+                          </div>
                         </div>
                       </div>
 
@@ -870,22 +1185,34 @@ export default function AdminManagementPage() {
                       >
                         <div>
                           <strong>Design</strong>
-                          <p>{request.design_description || "—"}</p>
+                          <p>
+                            {request.design_description ||
+                              "—"}
+                          </p>
                         </div>
+
                         <div>
                           <strong>Inspiration</strong>
-                          <p>{request.inspiration || "—"}</p>
+                          <p>
+                            {request.inspiration || "—"}
+                          </p>
                         </div>
+
                         <div>
                           <strong>Preferences</strong>
                           <p>
-                            Material: {request.preferred_material || "—"}
+                            Material:{" "}
+                            {request.preferred_material ||
+                              "—"}
                             <br />
-                            Color: {request.preferred_color || "—"}
+                            Color:{" "}
+                            {request.preferred_color || "—"}
                             <br />
-                            Budget: {request.budget || "—"}
+                            Budget:{" "}
+                            {request.budget || "—"}
                             <br />
-                            Timing: {request.timing || "—"}
+                            Timing:{" "}
+                            {request.timing || "—"}
                           </p>
                         </div>
                       </div>
@@ -909,25 +1236,42 @@ export default function AdminManagementPage() {
                           >
                             Request status
                           </label>
+
                           <select
                             value={request.status}
                             onChange={(e) =>
                               setRequests((previous) =>
                                 previous.map((r) =>
                                   r.id === request.id
-                                    ? { ...r, status: e.target.value }
+                                    ? {
+                                        ...r,
+                                        status:
+                                          e.target.value,
+                                      }
                                     : r
                                 )
                               )
                             }
                             style={inputStyle}
                           >
-                            <option value="pending">Pending</option>
-                            <option value="reviewing">Reviewing</option>
-                            <option value="contacted">Contacted</option>
-                            <option value="accepted">Accepted</option>
-                            <option value="rejected">Rejected</option>
-                            <option value="completed">Completed</option>
+                            <option value="pending">
+                              Pending
+                            </option>
+                            <option value="reviewing">
+                              Reviewing
+                            </option>
+                            <option value="contacted">
+                              Contacted
+                            </option>
+                            <option value="accepted">
+                              Accepted
+                            </option>
+                            <option value="rejected">
+                              Rejected
+                            </option>
+                            <option value="completed">
+                              Completed
+                            </option>
                           </select>
                         </div>
 
@@ -942,6 +1286,7 @@ export default function AdminManagementPage() {
                           >
                             Admin notes
                           </label>
+
                           <textarea
                             rows={3}
                             value={
@@ -952,7 +1297,8 @@ export default function AdminManagementPage() {
                             onChange={(e) =>
                               setNotesDraft((previous) => ({
                                 ...previous,
-                                [request.id]: e.target.value,
+                                [request.id]:
+                                  e.target.value,
                               }))
                             }
                             placeholder="Internal notes…"
@@ -963,9 +1309,16 @@ export default function AdminManagementPage() {
 
                       <button
                         type="button"
-                        onClick={() => saveBespokeRequest(request)}
-                        disabled={savingRequest === request.id}
-                        style={{ ...buttonStyle, marginTop: 14 }}
+                        onClick={() =>
+                          saveBespokeRequest(request)
+                        }
+                        disabled={
+                          savingRequest === request.id
+                        }
+                        style={{
+                          ...buttonStyle,
+                          marginTop: 14,
+                        }}
                       >
                         {savingRequest === request.id
                           ? "Saving…"
