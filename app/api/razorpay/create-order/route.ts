@@ -7,9 +7,16 @@ function basicAuth(keyId: string, keySecret: string) {
   return `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`;
 }
 
+function getBearerToken(request: Request) {
+  const authorization = request.headers.get("authorization") || "";
+  if (!authorization.toLowerCase().startsWith("bearer ")) return null;
+  return authorization.slice(7).trim() || null;
+}
+
 export async function POST(request: Request) {
   try {
-    const { orderId, accessToken } = await request.json();
+    const { orderId } = await request.json();
+    const accessToken = getBearerToken(request);
 
     if (!orderId || !accessToken) {
       return NextResponse.json(
@@ -40,9 +47,6 @@ export async function POST(request: Request) {
 
     // User-scoped client: authenticate the browser session and prove ownership.
     const userSupabase = createClient(supabaseUrl, publishableKey, {
-      global: {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
       auth: {
         persistSession: false,
         autoRefreshToken: false,
@@ -52,7 +56,7 @@ export async function POST(request: Request) {
     const {
       data: { user },
       error: userError,
-    } = await userSupabase.auth.getUser();
+    } = await userSupabase.auth.getUser(accessToken);
 
     if (userError || !user) {
       return NextResponse.json(

@@ -121,10 +121,24 @@ export default function PaymentPage() {
 
     try {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
+        data: { user: currentUser },
+        error: currentUserError,
+      } = await supabase.auth.getUser();
 
-      const accessToken = session?.access_token;
+      if (currentUserError || !currentUser) {
+        setErrorMessage("Your login session has expired. Please log in again.");
+        return;
+      }
+
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      let accessToken = refreshed.session?.access_token;
+
+      if (!accessToken) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        accessToken = session?.access_token;
+      }
 
       if (!accessToken) {
         setErrorMessage("Your login session has expired. Please log in again.");
@@ -142,10 +156,12 @@ export default function PaymentPage() {
 
       const createResponse = await fetch("/api/razorpay/create-order", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           orderId: order.id,
-          accessToken,
         }),
       });
 
@@ -182,10 +198,12 @@ export default function PaymentPage() {
               "/api/razorpay/verify-payment",
               {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${accessToken}`,
+                },
                 body: JSON.stringify({
                   orderId: order.id,
-                  accessToken,
                   razorpay_payment_id: response.razorpay_payment_id,
                   razorpay_order_id: response.razorpay_order_id,
                   razorpay_signature: response.razorpay_signature,

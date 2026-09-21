@@ -14,15 +14,22 @@ function signaturesMatch(expected: string, received: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+function getBearerToken(request: Request) {
+  const authorization = request.headers.get("authorization") || "";
+  if (!authorization.toLowerCase().startsWith("bearer ")) return null;
+  return authorization.slice(7).trim() || null;
+}
+
 export async function POST(request: Request) {
   try {
     const {
       orderId,
-      accessToken,
       razorpay_payment_id,
       razorpay_order_id,
       razorpay_signature,
     } = await request.json();
+
+    const accessToken = getBearerToken(request);
 
     if (
       !orderId ||
@@ -52,8 +59,9 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
       {
-        global: {
-          headers: { Authorization: `Bearer ${accessToken}` },
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
         },
       }
     );
@@ -61,7 +69,7 @@ export async function POST(request: Request) {
     const {
       data: { user },
       error: userError,
-    } = await userSupabase.auth.getUser();
+    } = await userSupabase.auth.getUser(accessToken);
 
     if (userError || !user) {
       return NextResponse.json(
