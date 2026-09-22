@@ -30,13 +30,14 @@ export default async function ProductPage({
     notFound();
   }
 
-  const variants = await getProductVariants(product.id);
-
+  // Load all remaining product data in parallel.
   const [
+    variants,
     { data: inventoryData, error: inventoryError },
     { data: imageData, error: imageError },
-    { data: videoData, error: videoError },
   ] = await Promise.all([
+    getProductVariants(product.id),
+
     supabase
       .from("product_inventory")
       .select("id, product_id, size, stock_quantity")
@@ -49,12 +50,6 @@ export default async function ProductPage({
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true })
       .limit(5),
-
-    supabase
-      .from("products")
-      .select("video_url")
-      .eq("id", product.id)
-      .single(),
   ]);
 
   if (inventoryError) {
@@ -65,24 +60,12 @@ export default async function ProductPage({
     console.error("PRODUCT GALLERY ERROR:", imageError);
   }
 
-  if (videoError) {
-    console.error("PRODUCT VIDEO ERROR:", videoError);
-  }
-
   const inventory = inventoryData ?? [];
   const additionalImages = imageData ?? [];
 
-  const videoUrl =
-    videoData?.video_url?.trim() ||
-    product.video_url?.trim() ||
-    null;
-
-  console.log("PRODUCT VIDEO DEBUG:", {
-    product: product.name,
-    productVideoUrl: product.video_url,
-    directVideoUrl: videoData?.video_url,
-    finalVideoUrl: videoUrl,
-  });
+  // video_url is already returned with the product.
+  // No need to query the products table again.
+  const videoUrl = product.video_url?.trim() || null;
 
   return (
     <>
