@@ -59,6 +59,11 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
       {
+        global: {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
         auth: {
           persistSession: false,
           autoRefreshToken: false,

@@ -6,6 +6,7 @@ import { formatINR } from "@/lib/products";
 import { supabase } from "@/lib/supabase";
 
 type Item = {
+  productId?: string;
   slug: string;
   name: string;
   price: number;
@@ -62,6 +63,119 @@ export default function Cart() {
   const [promoListLoaded, setPromoListLoaded] =
     useState(false);
 
+
+  async function syncCartToSupabase(
+    updatedItems: Item[]
+  ) {
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error(
+          "Unable to get customer for bag sync:",
+          userError.message,
+          userError.code
+        );
+        return;
+      }
+
+      if (!user) {
+        return;
+      }
+
+      const now = new Date().toISOString();
+
+      const { data: bag, error: bagError } =
+        await supabase
+          .from("customer_bags")
+          .upsert(
+            {
+              user_id: user.id,
+              updated_at: now,
+            },
+            {
+              onConflict: "user_id",
+            }
+          )
+          .select("id")
+          .single();
+
+      if (bagError || !bag) {
+        console.error(
+          "Unable to sync customer bag:",
+          bagError?.message,
+          bagError?.code,
+          bagError?.details,
+          bagError?.hint
+        );
+        return;
+      }
+
+      const { error: deleteError } =
+        await supabase
+          .from("customer_bag_items")
+          .delete()
+          .eq("bag_id", bag.id);
+
+      if (deleteError) {
+        console.error(
+          "Unable to refresh customer bag items:",
+          deleteError.message,
+          deleteError.code,
+          deleteError.details,
+          deleteError.hint
+        );
+        return;
+      }
+
+      if (updatedItems.length === 0) {
+        return;
+      }
+
+      const rows = updatedItems.map((item) => ({
+        bag_id: bag.id,
+        product_id: item.productId ?? null,
+        slug: item.slug,
+        product_name: item.name,
+        selected_size: item.size ?? null,
+        quantity: Math.max(1, Number(item.qty || 1)),
+        unit_price: Number(item.price || 0),
+        image_url: item.image ?? null,
+        updated_at: now,
+      }));
+
+      const { error: insertError } =
+        await supabase
+          .from("customer_bag_items")
+          .insert(rows);
+
+      if (insertError) {
+        console.error(
+          "Unable to save customer bag items:",
+          insertError.message,
+          insertError.code,
+          insertError.details,
+          insertError.hint
+        );
+
+        console.error(
+          "Customer bag rows that failed:",
+          rows
+        );
+
+        return;
+      }
+    } catch (error) {
+      console.error(
+        "Unable to sync bag with Supabase:",
+        error
+      );
+    }
+  }
+
   function getCartImage(item: Item) {
     if (item.image?.trim()) {
       return item.image.trim();
@@ -97,6 +211,17 @@ export default function Cart() {
 
   const total = subtotal - discount;
 
+  // A stable fingerprint lets us re-check promotions whenever the bag
+  // contents, quantities, sizes or variants change.
+  const cartFingerprint = JSON.stringify(
+    items.map((item) => ({
+      slug: item.slug,
+      qty: item.qty,
+      size: item.size ?? null,
+      variantId: item.variantId ?? null,
+    }))
+  );
+
   useEffect(() => {
     function loadCart() {
       try {
@@ -104,11 +229,13 @@ export default function Cart() {
           localStorage.getItem("cl-cart") || "[]"
         );
 
-        setItems(
+        const normalizedCart =
           Array.isArray(savedCart)
             ? savedCart
-            : []
-        );
+            : [];
+
+        setItems(normalizedCart);
+
       } catch {
         setItems([]);
       }
@@ -129,6 +256,99 @@ export default function Cart() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncPromotionsWithBag() {
+      // Any bag change invalidates the cached Available Offers list.
+      setPromoListLoaded(false);
+      setAvailablePromos([]);
+
+      if (subtotal <= 0) {
+        if (!cancelled) {
+          setAppliedPromo(null);
+          setPromoMessage("");
+          setPromoError(false);
+        }
+        return;
+      }
+
+      // If a code is already applied, revalidate it against the NEW bag.
+      // This also recalculates the discount when an eligible item's
+      // quantity changes or when eligible products are removed.
+      if (appliedPromo?.code) {
+        const { data, error } = await supabase.rpc(
+          "validate_promotion",
+          {
+            p_code: appliedPromo.code,
+            p_subtotal: subtotal,
+            p_items: items.map((item) => ({
+              slug: item.slug,
+              qty: item.qty,
+              variantId: item.variantId ?? null,
+            })),
+          }
+        );
+
+        if (cancelled) return;
+
+        if (error) {
+          console.error(
+            "Promotion revalidation error:",
+            error
+          );
+          setAppliedPromo(null);
+          setPromoError(true);
+          setPromoMessage(
+            "Your bag changed, so the promo code was removed. Please apply it again."
+          );
+        } else if (!data || data.valid !== true) {
+          setAppliedPromo(null);
+          setPromoError(true);
+          setPromoMessage(
+            data?.message ||
+              "This promo no longer applies to the products in your bag."
+          );
+        } else {
+          setAppliedPromo({
+            promotionId: data.promotion_id,
+            code: data.code,
+            discountType: data.discount_type,
+            discountValue: Number(data.discount_value),
+            discountAmount: Number(data.discount_amount),
+            minimumOrderValue: Number(
+              data.minimum_order_value || 0
+            ),
+            maximumDiscount:
+              data.maximum_discount !== null &&
+              data.maximum_discount !== undefined
+                ? Number(data.maximum_discount)
+                : null,
+          });
+          setPromoError(false);
+          setPromoMessage(
+            data.message ||
+              `${data.code} applied successfully.`
+          );
+        }
+      }
+
+      // If the offer drawer is open, immediately refresh it for the
+      // current bag so stale/ineligible offers disappear.
+      if (promoListOpen && !cancelled) {
+        await loadApplicablePromotions();
+      }
+    }
+
+    syncPromotionsWithBag();
+
+    return () => {
+      cancelled = true;
+    };
+    // appliedPromo.code is intentionally the only promo dependency:
+    // discountAmount updates must not cause a validation loop.
+  }, [cartFingerprint, appliedPromo?.code, promoListOpen]);
+
   function saveCart(updatedItems: Item[]) {
     setItems(updatedItems);
 
@@ -139,6 +359,10 @@ export default function Cart() {
 
     window.dispatchEvent(
       new Event("cl-cart-updated")
+    );
+
+    void syncCartToSupabase(
+      updatedItems
     );
   }
 
@@ -194,6 +418,11 @@ export default function Cart() {
           "get_applicable_promotions",
           {
             p_subtotal: subtotal,
+            p_items: items.map((item) => ({
+              slug: item.slug,
+              qty: item.qty,
+              variantId: item.variantId ?? null,
+            })),
           }
         );
 
@@ -316,6 +545,11 @@ export default function Cart() {
           {
             p_code: enteredCode,
             p_subtotal: subtotal,
+            p_items: items.map((item) => ({
+              slug: item.slug,
+              qty: item.qty,
+              variantId: item.variantId ?? null,
+            })),
           }
         );
 

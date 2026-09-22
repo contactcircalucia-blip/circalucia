@@ -27,6 +27,7 @@ export default function Account() {
 
   const [showSignup, setShowSignup] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [showGoogleProfileSetup, setShowGoogleProfileSetup] = useState(false);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -184,6 +185,10 @@ export default function Account() {
         full_name?: string;
         phone?: string;
       };
+      app_metadata?: {
+        provider?: string;
+        providers?: string[];
+      };
     }
   ) {
     setUserEmail(sessionUser.email || "");
@@ -195,12 +200,93 @@ export default function Account() {
       .from("profiles")
       .select("full_name, phone")
       .eq("id", sessionUser.id)
-      .single();
+      .maybeSingle();
 
     if (profileError) {
-      console.error(profileError);
+      console.error(
+        "Unable to load customer profile:",
+        profileError
+      );
+    }
+
+    let resolvedProfile = profileData;
+
+    // Google OAuth users may arrive with their name in auth metadata.
+    // If the profile trigger has not created a row yet, create one.
+    // If the row exists but the name is blank, fill it from Google.
+    const googleName =
+      sessionUser.user_metadata?.full_name?.trim() || "";
+
+    if (!profileData) {
+      const {
+        data: createdProfile,
+        error: createProfileError,
+      } = await supabase
+        .from("profiles")
+        .insert({
+          id: sessionUser.id,
+          full_name: googleName || null,
+          phone:
+            sessionUser.user_metadata?.phone || null,
+        })
+        .select("full_name, phone")
+        .single();
+
+      if (createProfileError) {
+        console.error(
+          "Unable to create customer profile:",
+          createProfileError
+        );
+      } else {
+        resolvedProfile = createdProfile;
+      }
+    } else if (
+      !profileData.full_name &&
+      googleName
+    ) {
+      const {
+        data: updatedProfile,
+        error: updateProfileError,
+      } = await supabase
+        .from("profiles")
+        .update({
+          full_name: googleName,
+        })
+        .eq("id", sessionUser.id)
+        .select("full_name, phone")
+        .single();
+
+      if (updateProfileError) {
+        console.error(
+          "Unable to update Google customer name:",
+          updateProfileError
+        );
+      } else {
+        resolvedProfile = updatedProfile;
+      }
+    }
+
+    setProfile(resolvedProfile);
+
+    const isGoogleUser =
+      sessionUser.app_metadata?.provider === "google" ||
+      sessionUser.app_metadata?.providers?.includes("google") === true;
+
+    const resolvedName =
+      resolvedProfile?.full_name?.trim() ||
+      googleName;
+
+    const resolvedPhone =
+      resolvedProfile?.phone?.trim() ||
+      sessionUser.user_metadata?.phone?.trim() ||
+      "";
+
+    if (isGoogleUser && (!resolvedName || !resolvedPhone)) {
+      setFullName(resolvedName);
+      setPhone("");
+      setShowGoogleProfileSetup(true);
     } else {
-      setProfile(profileData);
+      setShowGoogleProfileSetup(false);
     }
 
     await loadOrders(sessionUser.id);
@@ -294,6 +380,49 @@ export default function Account() {
   function handlePhoneChange(value: string) {
     const digitsOnly = value.replace(/\D/g, "");
     setPhone(digitsOnly.slice(0, 10));
+  }
+
+  async function handleGoogleSignIn() {
+    if (loading) return;
+
+    setLoading(true);
+    setError("");
+    setMessage("");
+    setShowWrongCredentials(false);
+
+    try {
+      const { error: googleError } =
+        await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: `${window.location.origin}/account`,
+          },
+        });
+
+      if (googleError) {
+        console.error(
+          "Google sign-in failed:",
+          googleError
+        );
+
+        setError(
+          "Unable to continue with Google. Please try again."
+        );
+
+        setLoading(false);
+      }
+    } catch (googleSignInError) {
+      console.error(
+        "Unexpected Google sign-in error:",
+        googleSignInError
+      );
+
+      setError(
+        "Something went wrong while connecting to Google. Please try again."
+      );
+
+      setLoading(false);
+    }
   }
 
   async function handleSignIn(
@@ -424,6 +553,126 @@ export default function Account() {
     setPassword("");
 
     window.location.reload();
+  }
+
+  async function handleGoogleProfileSetup(
+    e: FormEvent<HTMLFormElement>
+  ) {
+    e.preventDefault();
+
+    if (loading) return;
+
+    setLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const trimmedName = fullName.trim();
+
+      if (!trimmedName) {
+        setError("Please enter your full name.");
+        return;
+      }
+
+      if (!/^\d{10}$/.test(phone)) {
+        setError(
+          "Phone number must contain exactly 10 digits."
+        );
+        return;
+      }
+
+      const fullPhone =
+        `+${getCountryCallingCode(country)}${phone}`;
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setError(
+          "Your Google session could not be verified. Please sign in again."
+        );
+        return;
+      }
+
+      const existingPhone = profile?.phone?.trim() || "";
+
+      if (fullPhone !== existingPhone) {
+        const {
+          data: phoneRegistered,
+          error: phoneCheckError,
+        } = await supabase.rpc(
+          "is_phone_registered",
+          {
+            p_phone: fullPhone,
+          }
+        );
+
+        if (phoneCheckError) {
+          console.error(
+            "Phone check error:",
+            phoneCheckError
+          );
+
+          setError(
+            "Unable to verify the phone number. Please try again."
+          );
+          return;
+        }
+
+        if (phoneRegistered === true) {
+          setError(
+            "This mobile number is already registered with another account."
+          );
+          return;
+        }
+      }
+
+      const {
+        data: updatedProfile,
+        error: updateProfileError,
+      } = await supabase
+        .from("profiles")
+        .update({
+          full_name: trimmedName,
+          phone: fullPhone,
+        })
+        .eq("id", user.id)
+        .select("full_name, phone")
+        .single();
+
+      if (updateProfileError) {
+        console.error(
+          "Unable to complete Google profile:",
+          updateProfileError
+        );
+
+        setError(
+          "We could not save your account details. Please try again."
+        );
+        return;
+      }
+
+      setProfile(updatedProfile);
+      setShowGoogleProfileSetup(false);
+      setMessage(
+        "Your Circa Lucia account is ready."
+      );
+
+      await sendWelcomeEmail();
+    } catch (setupError) {
+      console.error(
+        "Google profile setup failed:",
+        setupError
+      );
+
+      setError(
+        "Something went wrong while completing your account. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleSignup(
@@ -573,6 +822,7 @@ export default function Account() {
     setOrders([]);
     setProfile(null);
     setUserEmail("");
+    setShowGoogleProfileSetup(false);
   }
 
   function formatOrderDate(date: string) {
@@ -610,6 +860,105 @@ export default function Account() {
             : "Sign in to view orders, saved designs, addresses and your bespoke journey."}
         </p>
 
+        {!showForgotPassword && (
+          <div
+            style={{
+              width: "100%",
+              marginTop: "24px",
+              marginBottom: "24px",
+            }}
+          >
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              aria-label="Continue with Google"
+              style={{
+                width: "100%",
+                minHeight: "52px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "12px",
+                padding: "14px 18px",
+                border: "1px solid #d8d3cb",
+                borderRadius: "0",
+                background: "#ffffff",
+                color: "#171512",
+                fontFamily: "inherit",
+                fontSize: "13px",
+                fontWeight: 500,
+                letterSpacing: "0.04em",
+                cursor: loading ? "not-allowed" : "pointer",
+                opacity: loading ? 0.65 : 1,
+              }}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 18 18"
+                aria-hidden="true"
+              >
+                <path
+                  fill="#4285F4"
+                  d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.482h4.844a4.14 4.14 0 0 1-1.797 2.715v2.258h2.909c1.702-1.567 2.684-3.875 2.684-6.614Z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M9 18c2.43 0 4.468-.806 5.956-2.181l-2.909-2.258c-.806.54-1.835.859-3.047.859-2.344 0-4.328-1.585-5.037-3.714H.956v2.332A9 9 0 0 0 9 18Z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M3.963 10.706A5.41 5.41 0 0 1 3.682 9c0-.592.102-1.168.281-1.706V4.962H.956A9 9 0 0 0 0 9c0 1.452.347 2.827.956 4.038l3.007-2.332Z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M9 3.58c1.321 0 2.507.454 3.441 1.346l2.581-2.581C13.464.892 11.426 0 9 0A9 9 0 0 0 .956 4.962l3.007 2.332C4.672 5.165 6.656 3.58 9 3.58Z"
+                />
+              </svg>
+
+              {loading
+                ? "Connecting..."
+                : "Continue with Google"}
+            </button>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "14px",
+                marginTop: "22px",
+              }}
+            >
+              <span
+                style={{
+                  height: "1px",
+                  flex: 1,
+                  background: "#ddd8d0",
+                }}
+              />
+
+              <span
+                style={{
+                  fontSize: "10px",
+                  letterSpacing: "0.16em",
+                  color: "#77716a",
+                }}
+              >
+                OR
+              </span>
+
+              <span
+                style={{
+                  height: "1px",
+                  flex: 1,
+                  background: "#ddd8d0",
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {showWrongCredentials && (
           <div className="credentials-warning">
             <div className="credentials-warning-content">
@@ -643,10 +992,11 @@ export default function Account() {
         {showForgotPassword ? (
           <form onSubmit={handleForgotPassword}>
             <p>
-              We’ll send a secure password-reset
-              link to the email address you entered
-              on the sign-in form. You cannot change
-              the email address here.
+              For email-and-password accounts, we’ll
+              send a secure password-reset link to the
+              email address you entered. Google accounts
+              can continue with Google instead and do not
+              need a Circa Lucia password or OTP.
             </p>
 
             <input
@@ -657,6 +1007,29 @@ export default function Account() {
               readOnly
               required
             />
+
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              style={{
+                width: "100%",
+                minHeight: "52px",
+                marginTop: "14px",
+                marginBottom: "18px",
+                border: "1px solid #d8d3cb",
+                background: "#ffffff",
+                color: "#171512",
+                fontFamily: "inherit",
+                fontSize: "13px",
+                fontWeight: 500,
+                letterSpacing: "0.04em",
+                cursor: loading ? "not-allowed" : "pointer",
+                opacity: loading ? 0.65 : 1,
+              }}
+            >
+              Continue with Google
+            </button>
 
             {error && (
               <div className="error-box">
@@ -940,6 +1313,118 @@ export default function Account() {
     );
   }
 
+  if (logged && showGoogleProfileSetup) {
+    return (
+      <section className="auth-page section">
+        <p className="eyebrow">
+          CLIENT PRIVILEGES
+        </p>
+
+        <h1>Complete your account.</h1>
+
+        <p>
+          Add your remaining details to finish setting up
+          your private Circa Lucia account.
+        </p>
+
+        <form onSubmit={handleGoogleProfileSetup}>
+          <input
+            className="input"
+            placeholder="Full name"
+            value={fullName}
+            onChange={(e) =>
+              setFullName(e.target.value)
+            }
+            required
+          />
+
+          <input
+            className="input"
+            type="email"
+            placeholder="Email address"
+            value={userEmail}
+            readOnly
+          />
+
+          <div className="phone-row">
+            <select
+              className="input phone-country"
+              value={country}
+              onChange={(e) =>
+                setCountry(
+                  e.target.value as Country
+                )
+              }
+            >
+              {countries.map((countryCode) => {
+                const name =
+                  countryNames.of(countryCode) ||
+                  countryCode;
+
+                const callingCode =
+                  getCountryCallingCode(
+                    countryCode
+                  );
+
+                return (
+                  <option
+                    key={countryCode}
+                    value={countryCode}
+                  >
+                    {name} (+{callingCode})
+                  </option>
+                );
+              })}
+            </select>
+
+            <input
+              className="input phone-number"
+              type="tel"
+              inputMode="numeric"
+              placeholder="10-digit mobile number"
+              value={phone}
+              onChange={(e) =>
+                handlePhoneChange(
+                  e.target.value
+                )
+              }
+              maxLength={10}
+              pattern="[0-9]{10}"
+              required
+            />
+          </div>
+
+          <p className="phone-help">
+            Enter exactly 10 digits. Country code
+            is selected separately.
+          </p>
+
+          {error && (
+            <div className="error-box">
+              {error}
+            </div>
+          )}
+
+          {message && (
+            <div className="success-box">
+              {message}
+            </div>
+          )}
+
+          <button
+            className="button button-dark"
+            type="submit"
+            disabled={loading}
+          >
+            {loading
+              ? "Saving details..."
+              : "Complete account"}
+          </button>
+        </form>
+      </section>
+    );
+  }
+
   return (
     <section className="section account-page">
       <p className="eyebrow">
@@ -1057,7 +1542,12 @@ export default function Account() {
             addresses.
           </p>
 
-          <strong>Manage details →</strong>
+          <a
+            href="/account/details"
+            className="text-link"
+          >
+            Manage details →
+          </a>
         </div>
 
         <div className="account-card">
@@ -1070,7 +1560,12 @@ export default function Account() {
             with our atelier.
           </p>
 
-          <strong>View requests →</strong>
+          <a
+            href="/account/bespoke"
+            className="text-link"
+          >
+            View requests →
+          </a>
         </div>
       </div>
 

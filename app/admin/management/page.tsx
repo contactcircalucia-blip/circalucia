@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import AdminNav from "@/components/AdminNav";
 
 type Product = {
   id: string;
@@ -19,6 +20,21 @@ type Product = {
   is_bespoke: boolean;
   featured_home: boolean;
   image_url: string | null;
+  video_url: string | null;
+  product_details: string | null;
+  size_and_fit: string | null;
+  material_and_care: string | null;
+  delivery_note: string | null;
+  return_note: string | null;
+  specifications: Record<string, string> | null;
+};
+
+type ProductImage = {
+  id: string;
+  product_id: string;
+  image_url: string;
+  sort_order: number;
+  created_at: string;
 };
 
 type BespokeRequest = {
@@ -36,6 +52,11 @@ type BespokeRequest = {
   timing: string | null;
   status: string;
   admin_notes: string | null;
+  final_price: number | null;
+  approved_at: string | null;
+  ordered_at: string | null;
+  order_id: string | null;
+  customer_message: string | null;
   created_at: string;
 };
 
@@ -69,6 +90,20 @@ const emptyProduct = {
   material: "",
   heel_height: "",
   image_url: "",
+  video_url: "",
+  product_details: "",
+  size_and_fit: "",
+  material_and_care: "",
+  delivery_note: "",
+  return_note: "",
+  spec_colour: "",
+  spec_heel_type: "",
+  spec_toe_shape: "",
+  spec_fastening: "",
+  spec_upper_material: "",
+  spec_sole_material: "",
+  spec_occasion: "",
+  spec_ornamentation: "",
   is_active: true,
   is_bespoke: false,
   featured_home: false,
@@ -96,6 +131,14 @@ function money(value: number) {
   })}`;
 }
 
+
+function mediaFileName(value: string | null | undefined) {
+  const clean = (value || "").trim().split("?")[0].split("#")[0];
+  if (!clean) return "";
+  const parts = clean.split("/");
+  return decodeURIComponent(parts[parts.length - 1] || clean);
+}
+
 export default function AdminManagementPage() {
   const [checked, setChecked] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -111,10 +154,15 @@ export default function AdminManagementPage() {
 
   const [search, setSearch] = useState("");
   const [productForm, setProductForm] = useState({ ...emptyProduct });
+  const [showProductForm, setShowProductForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [productImages, setProductImages] = useState<ProductImage[]>([]);
+  const [newImageUrl, setNewImageUrl] = useState("");
+  const [savingImage, setSavingImage] = useState(false);
 
   const [requestFilter, setRequestFilter] = useState("all");
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
+  const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [savingRequest, setSavingRequest] = useState<string | null>(null);
 
   useEffect(() => {
@@ -250,8 +298,11 @@ export default function AdminManagementPage() {
     });
   }, [requests, search, requestFilter]);
 
-  function startEdit(product: Product) {
+  async function startEdit(product: Product) {
+    setShowProductForm(true);
     setEditingId(product.id);
+    setProductImages([]);
+    setNewImageUrl("");
 
     setProductForm({
       name: product.name || "",
@@ -264,17 +315,226 @@ export default function AdminManagementPage() {
       material: product.material || "",
       heel_height: product.heel_height || "",
       image_url: product.image_url || "",
+      video_url: product.video_url || "",
+      product_details: product.product_details || "",
+      size_and_fit: product.size_and_fit || "",
+      material_and_care: product.material_and_care || "",
+      delivery_note: product.delivery_note || "",
+      return_note: product.return_note || "",
+      spec_colour: product.specifications?.colour || "",
+      spec_heel_type: product.specifications?.heel_type || "",
+      spec_toe_shape: product.specifications?.toe_shape || "",
+      spec_fastening: product.specifications?.fastening || "",
+      spec_upper_material: product.specifications?.upper_material || "",
+      spec_sole_material: product.specifications?.sole_material || "",
+      spec_occasion: product.specifications?.occasion || "",
+      spec_ornamentation: product.specifications?.ornamentation || "",
       is_active: product.is_active,
       is_bespoke: product.is_bespoke,
       featured_home: product.featured_home === true,
     });
 
+    const { data: imageRows, error: imageError } = await supabase
+      .from("product_images")
+      .select("*")
+      .eq("product_id", product.id)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    if (imageError) {
+      console.error(imageError);
+      setError(imageError.message || "Unable to load additional product photos.");
+    } else {
+      setProductImages((imageRows || []) as ProductImage[]);
+    }
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  async function reloadProductImages(productId: string) {
+    const { data, error } = await supabase
+      .from("product_images")
+      .select("*")
+      .eq("product_id", productId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+    setProductImages((data || []) as ProductImage[]);
+  }
+
+  async function addProductImage() {
+    if (!editingId) {
+      setError("Save the product first, then add additional photos.");
+      return;
+    }
+
+    const imageUrl = newImageUrl.trim();
+
+    if (!imageUrl) {
+      setError("Enter an additional image URL.");
+      return;
+    }
+
+    if (productImages.length >= 5) {
+      setError("Maximum 5 gallery photos allowed per product.");
+      return;
+    }
+
+    setSavingImage(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const nextSortOrder =
+        productImages.length === 0
+          ? 0
+          : Math.max(
+              ...productImages.map((image) => image.sort_order || 0)
+            ) + 1;
+
+      const { data, error: insertError } = await supabase
+        .from("product_images")
+        .insert({
+          product_id: editingId,
+          image_url: imageUrl,
+          sort_order: nextSortOrder,
+        })
+        .select("id, product_id, image_url, sort_order, created_at");
+
+      if (insertError) {
+        const readableError = [
+          insertError.message,
+          insertError.details,
+          insertError.hint,
+          insertError.code ? `Code: ${insertError.code}` : "",
+        ]
+          .filter(Boolean)
+          .join(" | ");
+
+        console.error(
+          "ADD PRODUCT IMAGE SUPABASE ERROR:",
+          JSON.stringify(
+            {
+              message: insertError.message || "",
+              details: insertError.details || "",
+              hint: insertError.hint || "",
+              code: insertError.code || "",
+              product_id: editingId,
+              image_url: imageUrl,
+              sort_order: nextSortOrder,
+            },
+            null,
+            2
+          )
+        );
+
+        setError(
+          readableError ||
+            "Supabase rejected the gallery photo insert. Check the browser console."
+        );
+        return;
+      }
+
+      console.log("PRODUCT IMAGE INSERT SUCCESS:", data);
+
+      setNewImageUrl("");
+      await reloadProductImages(editingId);
+      setMessage("Additional product photo added.");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+          ? err
+          : "Unexpected error while adding product photo.";
+
+      console.error("ADD PRODUCT IMAGE UNEXPECTED ERROR:", message);
+      setError(message);
+    } finally {
+      setSavingImage(false);
+    }
+  }
+
+  async function removeProductImage(imageId: string) {
+    if (!editingId) return;
+
+    setSavingImage(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const { error } = await supabase
+        .from("product_images")
+        .delete()
+        .eq("id", imageId);
+
+      if (error) throw error;
+
+      await reloadProductImages(editingId);
+      setMessage("Additional product photo removed.");
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "Could not remove product photo.");
+    } finally {
+      setSavingImage(false);
+    }
+  }
+
+  async function moveProductImage(imageId: string, direction: -1 | 1) {
+    if (!editingId) return;
+
+    const currentIndex = productImages.findIndex((image) => image.id === imageId);
+    const targetIndex = currentIndex + direction;
+
+    if (
+      currentIndex < 0 ||
+      targetIndex < 0 ||
+      targetIndex >= productImages.length
+    ) {
+      return;
+    }
+
+    setSavingImage(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const current = productImages[currentIndex];
+      const target = productImages[targetIndex];
+
+      const currentOrder = current.sort_order ?? currentIndex;
+      const targetOrder = target.sort_order ?? targetIndex;
+
+      const { error: currentError } = await supabase
+        .from("product_images")
+        .update({ sort_order: targetOrder })
+        .eq("id", current.id);
+
+      if (currentError) throw currentError;
+
+      const { error: targetError } = await supabase
+        .from("product_images")
+        .update({ sort_order: currentOrder })
+        .eq("id", target.id);
+
+      if (targetError) throw targetError;
+
+      await reloadProductImages(editingId);
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "Could not reorder product photos.");
+    } finally {
+      setSavingImage(false);
+    }
+  }
+
   function resetProductForm() {
+    setShowProductForm(false);
     setEditingId(null);
     setProductForm({ ...emptyProduct });
+    setProductImages([]);
+    setNewImageUrl("");
   }
 
   async function saveProduct(event: React.FormEvent<HTMLFormElement>) {
@@ -297,6 +557,12 @@ export default function AdminManagementPage() {
 
       if (!slug) {
         throw new Error("Enter a valid product slug.");
+      }
+
+      if (!productForm.image_url.trim()) {
+        throw new Error(
+          "Main Product Photo is required. Add the cover image URL before saving."
+        );
       }
 
       if (!Number.isFinite(price) || price < 0) {
@@ -344,6 +610,22 @@ export default function AdminManagementPage() {
         material: productForm.material.trim() || null,
         heel_height: productForm.heel_height.trim() || null,
         image_url: productForm.image_url.trim() || null,
+        video_url: productForm.video_url.trim() || null,
+        product_details: productForm.product_details.trim() || null,
+        size_and_fit: productForm.size_and_fit.trim() || null,
+        material_and_care: productForm.material_and_care.trim() || null,
+        delivery_note: productForm.delivery_note.trim() || null,
+        return_note: productForm.return_note.trim() || null,
+        specifications: {
+          colour: productForm.spec_colour.trim(),
+          heel_type: productForm.spec_heel_type.trim(),
+          toe_shape: productForm.spec_toe_shape.trim(),
+          fastening: productForm.spec_fastening.trim(),
+          upper_material: productForm.spec_upper_material.trim(),
+          sole_material: productForm.spec_sole_material.trim(),
+          occasion: productForm.spec_occasion.trim(),
+          ornamentation: productForm.spec_ornamentation.trim(),
+        },
         is_active: productForm.is_active,
         is_bespoke: productForm.is_bespoke,
         featured_home: productForm.featured_home,
@@ -372,9 +654,37 @@ export default function AdminManagementPage() {
           )
         );
 
+        const savedSpecifications = Object.values(
+          updatedProduct.specifications || {}
+        ).filter((value) => String(value || "").trim()).length;
+
+        const savedItems = [
+          updatedProduct.image_url ? "Main photo" : "",
+          productImages.length > 0
+            ? `${productImages.length} gallery photo${
+                productImages.length === 1 ? "" : "s"
+              }`
+            : "",
+          updatedProduct.video_url ? "Product video" : "",
+          updatedProduct.description ? "Product description" : "",
+          updatedProduct.product_details ? "Product details" : "",
+          updatedProduct.size_and_fit ? "Size & Fit" : "",
+          updatedProduct.material_and_care ? "Material & Care" : "",
+          savedSpecifications > 0
+            ? `${savedSpecifications} specification${
+                savedSpecifications === 1 ? "" : "s"
+              }`
+            : "",
+          updatedProduct.delivery_note ? "Delivery note" : "",
+          updatedProduct.return_note ? "Returns note" : "",
+          updatedProduct.featured_home ? "Homepage display" : "",
+        ].filter(Boolean);
+
         setMessage(
-          `Product updated successfully. Image: ${
-            updatedProduct.image_url || "No image"
+          `${updatedProduct.name} updated successfully.${
+            savedItems.length
+              ? ` Saved: ${savedItems.join(" · ")}.`
+              : ""
           }`
         );
       } else {
@@ -384,7 +694,13 @@ export default function AdminManagementPage() {
 
         if (error) throw error;
 
-        setMessage("Product added.");
+        setMessage(
+          `Product added successfully.${
+            productForm.video_url.trim() ? " Product video saved." : ""
+          }${
+            productForm.featured_home ? " Homepage display enabled." : ""
+          }`
+        );
       }
 
       resetProductForm();
@@ -514,6 +830,56 @@ export default function AdminManagementPage() {
     }
   }
 
+  async function approveAndCreateBespokeOrder(request: BespokeRequest) {
+    setSavingRequest(request.id);
+    setError("");
+    setMessage("");
+
+    try {
+      if (request.order_id) {
+        throw new Error("This bespoke request already has an order.");
+      }
+
+      const finalPrice = Number(
+        priceDraft[request.id] ?? request.final_price ?? ""
+      );
+
+      if (!Number.isFinite(finalPrice) || finalPrice <= 0) {
+        throw new Error("Enter a valid final bespoke price before approval.");
+      }
+
+      const { data, error: rpcError } = await supabase.rpc(
+        "admin_approve_bespoke_and_create_order",
+        {
+          p_request_id: request.id,
+          p_final_price: finalPrice,
+          p_admin_notes: notesDraft[request.id] ?? request.admin_notes ?? null,
+        }
+      );
+
+      if (rpcError) throw rpcError;
+
+      const result = data as {
+        order_id?: string;
+        order_number?: string;
+        already_created?: boolean;
+      } | null;
+
+      setMessage(
+        result?.already_created
+          ? `Bespoke order ${result.order_number || ""} already exists.`
+          : `Bespoke request approved. Order ${result?.order_number || ""} created for the customer.`
+      );
+
+      await loadData();
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "Could not approve bespoke request.");
+    } finally {
+      setSavingRequest(null);
+    }
+  }
+
   if (!checked) {
     return (
       <main className="page">
@@ -593,24 +959,7 @@ export default function AdminManagementPage() {
             </button>
           </div>
 
-          <nav
-            aria-label="Admin sections"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 28,
-              flexWrap: "wrap",
-              borderTop: "1px solid var(--line)",
-              borderBottom: "1px solid var(--line)",
-              padding: "14px 0",
-              marginBottom: 22,
-            }}
-          >
-            <Link href="/admin" style={{ color:"var(--ink)", textDecoration:"none", fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase" }}>Orders</Link>
-            <Link href="/admin/customers" style={{ color:"var(--ink)", textDecoration:"none", fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase" }}>Customers</Link>
-            <Link href="/admin/management" style={{ color:"var(--ink)", textDecoration:"underline", textUnderlineOffset:6, fontWeight:600, fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase" }}>Bespoke &amp; Catalogue</Link>
-            <Link href="/admin/stock" style={{ color:"var(--ink)", textDecoration:"none", fontSize:12, letterSpacing:"0.08em", textTransform:"uppercase" }}>Stock Management</Link>
-          </nav>
+          <AdminNav />
 
           <div
             style={{
@@ -728,6 +1077,26 @@ export default function AdminManagementPage() {
                 </div>
               </div>
 
+              {!showProductForm && !editingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetProductForm();
+                    setShowProductForm(true);
+                    setError("");
+                    setMessage("");
+                  }}
+                  style={{
+                    ...buttonStyle,
+                    marginBottom: 30,
+                    minWidth: 150,
+                  }}
+                >
+                  + Add product
+                </button>
+              )}
+
+              {(showProductForm || editingId) && (
               <form
                 onSubmit={saveProduct}
                 style={{
@@ -861,17 +1230,175 @@ export default function AdminManagementPage() {
                     style={inputStyle}
                   />
 
-                  <input
-                    placeholder="Image URL (optional)"
-                    value={productForm.image_url}
-                    onChange={(e) =>
-                      setProductForm((p) => ({
-                        ...p,
-                        image_url: e.target.value,
-                      }))
-                    }
-                    style={inputStyle}
-                  />
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        marginBottom: 6,
+                        fontSize: 12,
+                        color: "var(--muted)",
+                      }}
+                    >
+                      Main Product Photo · required
+                    </label>
+
+                    {productForm.image_url.trim() && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          marginBottom: 8,
+                          padding: 8,
+                          border: "1px solid var(--line)",
+                          background: "var(--cream)",
+                        }}
+                      >
+                        <img
+                          src={productForm.image_url.trim()}
+                          alt="Main product photo"
+                          style={{
+                            width: 72,
+                            height: 72,
+                            objectFit: "cover",
+                            display: "block",
+                            border: "1px solid var(--line)",
+                            background: "var(--paper)",
+                          }}
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                          }}
+                        />
+                        <div style={{ minWidth: 0, fontSize: 12 }}>
+                          <strong style={{ display: "block", marginBottom: 4 }}>
+                            {mediaFileName(productForm.image_url)}
+                          </strong>
+                          <span
+                            style={{
+                              color: "var(--muted)",
+                              overflowWrap: "anywhere",
+                            }}
+                          >
+                            Path: {productForm.image_url}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <input
+                      required
+                      placeholder="/products/luciana.jpg"
+                      value={productForm.image_url}
+                      onChange={(e) =>
+                        setProductForm((p) => ({
+                          ...p,
+                          image_url: e.target.value,
+                        }))
+                      }
+                      style={inputStyle}
+                    />
+                    <div
+                      style={{
+                        marginTop: 5,
+                        color: "var(--muted)",
+                        fontSize: 11,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      For files inside public/products, use /products/filename.jpg.
+                      This is the cover image used on Homepage, Collection and the
+                      product page.
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        marginBottom: 6,
+                        fontSize: 12,
+                        color: "var(--muted)",
+                      }}
+                    >
+                      Product video · maximum 1
+                    </label>
+                    {productForm.video_url.trim() && (
+                      <div
+                        style={{
+                          marginBottom: 8,
+                          padding: 8,
+                          border: "1px solid var(--line)",
+                          background: "var(--cream)",
+                        }}
+                      >
+                        <video
+                          key={productForm.video_url.trim()}
+                          src={productForm.video_url.trim()}
+                          muted
+                          autoPlay
+                          loop
+                          playsInline
+                          preload="metadata"
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            maxWidth: 220,
+                            aspectRatio: "4 / 5",
+                            objectFit: "cover",
+                            border: "1px solid var(--line)",
+                            background: "var(--paper)",
+                          }}
+                        />
+
+                        <div
+                          style={{
+                            marginTop: 8,
+                            minWidth: 0,
+                            fontSize: 12,
+                          }}
+                        >
+                          <strong style={{ display: "block", marginBottom: 4 }}>
+                            {mediaFileName(productForm.video_url)}
+                          </strong>
+
+                          <span
+                            style={{
+                              color: "var(--muted)",
+                              overflowWrap: "anywhere",
+                            }}
+                          >
+                            Path: {productForm.video_url}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <input
+                      type="text"
+                      placeholder="/additonal/luciana/video.mp4"
+                      value={productForm.video_url}
+                      onChange={(e) =>
+                        setProductForm((p) => ({
+                          ...p,
+                          video_url: e.target.value,
+                        }))
+                      }
+                      style={inputStyle}
+                    />
+
+                    <div
+                      style={{
+                        marginTop: 5,
+                        color: "var(--muted)",
+                        fontSize: 11,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      Optional product-page video. One video per product. For a
+                      file inside public, use its browser path such as
+                      /additonal/luciana/video.mp4.
+                    </div>
+                  </div>
                 </div>
 
                 <textarea
@@ -886,6 +1413,347 @@ export default function AdminManagementPage() {
                   rows={4}
                   style={{ ...inputStyle, marginTop: 12 }}
                 />
+
+                <div
+                  style={{
+                    marginTop: 16,
+                    padding: 18,
+                    border: "1px solid var(--line)",
+                    background: "var(--cream)",
+                  }}
+                >
+                  <div style={{ marginBottom: 14 }}>
+                    <strong>Product page information</strong>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        color: "var(--muted)",
+                        fontSize: 13,
+                      }}
+                    >
+                      Optional details shown in the premium information sections
+                      on the product page.
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(260px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <textarea
+                      rows={4}
+                      placeholder="Product Details"
+                      value={productForm.product_details}
+                      onChange={(e) =>
+                        setProductForm((p) => ({
+                          ...p,
+                          product_details: e.target.value,
+                        }))
+                      }
+                      style={inputStyle}
+                    />
+
+                    <textarea
+                      rows={4}
+                      placeholder="Size & Fit"
+                      value={productForm.size_and_fit}
+                      onChange={(e) =>
+                        setProductForm((p) => ({
+                          ...p,
+                          size_and_fit: e.target.value,
+                        }))
+                      }
+                      style={inputStyle}
+                    />
+
+                    <textarea
+                      rows={4}
+                      placeholder="Material & Care"
+                      value={productForm.material_and_care}
+                      onChange={(e) =>
+                        setProductForm((p) => ({
+                          ...p,
+                          material_and_care: e.target.value,
+                        }))
+                      }
+                      style={inputStyle}
+                    />
+
+                    <textarea
+                      rows={4}
+                      placeholder="Delivery note"
+                      value={productForm.delivery_note}
+                      onChange={(e) =>
+                        setProductForm((p) => ({
+                          ...p,
+                          delivery_note: e.target.value,
+                        }))
+                      }
+                      style={inputStyle}
+                    />
+
+                    <textarea
+                      rows={4}
+                      placeholder="Returns / replacements note"
+                      value={productForm.return_note}
+                      onChange={(e) =>
+                        setProductForm((p) => ({
+                          ...p,
+                          return_note: e.target.value,
+                        }))
+                      }
+                      style={inputStyle}
+                    />
+                  </div>
+
+                  <div style={{ marginTop: 18, marginBottom: 10 }}>
+                    <strong>Specifications</strong>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(210px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    {[
+                      ["spec_colour", "Colour"],
+                      ["spec_heel_type", "Heel type"],
+                      ["spec_toe_shape", "Toe shape"],
+                      ["spec_fastening", "Fastening"],
+                      ["spec_upper_material", "Upper material"],
+                      ["spec_sole_material", "Sole material"],
+                      ["spec_occasion", "Occasion"],
+                      ["spec_ornamentation", "Ornamentation"],
+                    ].map(([field, label]) => (
+                      <input
+                        key={field}
+                        placeholder={label}
+                        value={
+                          productForm[
+                            field as keyof typeof productForm
+                          ] as string
+                        }
+                        onChange={(e) =>
+                          setProductForm((p) => ({
+                            ...p,
+                            [field]: e.target.value,
+                          }))
+                        }
+                        style={inputStyle}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {editingId && (
+                  <div
+                    style={{
+                      marginTop: 16,
+                      padding: 18,
+                      border: "1px solid var(--line)",
+                      background: "var(--cream)",
+                    }}
+                  >
+                    <div style={{ marginBottom: 12 }}>
+                      <strong>Gallery photos ({productImages.length}/5)</strong>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          color: "var(--muted)",
+                          fontSize: 13,
+                        }}
+                      >
+                        Add up to 5 gallery photos. They appear only on the
+                        individual product page. The Main Product Photo above
+                        remains the cover image used on Homepage and Collection.
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(0, 1fr) auto",
+                        gap: 10,
+                      }}
+                    >
+                      <input
+                        type="url"
+                        placeholder={
+                          productImages.length >= 5
+                            ? "Maximum 5 gallery photos reached"
+                            : "Gallery photo URL"
+                        }
+                        value={newImageUrl}
+                        disabled={productImages.length >= 5}
+                        onChange={(e) => setNewImageUrl(e.target.value)}
+                        style={inputStyle}
+                      />
+                      <button
+                        type="button"
+                        onClick={addProductImage}
+                        disabled={savingImage || productImages.length >= 5}
+                        style={{
+                          ...buttonStyle,
+                          opacity: productImages.length >= 5 ? 0.45 : 1,
+                          cursor:
+                            savingImage || productImages.length >= 5
+                              ? "not-allowed"
+                              : "pointer",
+                        }}
+                      >
+                        {savingImage
+                          ? "Saving…"
+                          : productImages.length >= 5
+                          ? "5 photos added"
+                          : "Add photo"}
+                      </button>
+                    </div>
+
+                    {productImages.length > 0 && (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fill, minmax(120px, 140px))",
+                          gap: 12,
+                          marginTop: 16,
+                        }}
+                      >
+                        {productImages.map((image, index) => (
+                          <div
+                            key={image.id}
+                            style={{
+                              border: "1px solid var(--line)",
+                              background: "var(--paper)",
+                              padding: 10,
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "relative",
+                                width: 120,
+                                height: 120,
+                                maxWidth: "100%",
+                                margin: "0 auto 8px",
+                                border: "1px solid var(--line)",
+                                background: "var(--cream)",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <img
+                                src={image.image_url}
+                                alt=""
+                                style={{
+                                  display: "block",
+                                  width: "100%",
+                                  height: "100%",
+                                  objectFit: "cover",
+                                }}
+                                onError={(event) => {
+                                  event.currentTarget.style.display = "none";
+                                  const fallback =
+                                    event.currentTarget.nextElementSibling as HTMLElement | null;
+                                  if (fallback) fallback.style.display = "grid";
+                                }}
+                              />
+                              <div
+                                style={{
+                                  display: "none",
+                                  position: "absolute",
+                                  inset: 0,
+                                  placeItems: "center",
+                                  padding: 8,
+                                  textAlign: "center",
+                                  color: "var(--muted)",
+                                  fontSize: 11,
+                                }}
+                              >
+                                Image unavailable
+                              </div>
+                            </div>
+
+                            <div
+                              style={{
+                                fontSize: 11,
+                                lineHeight: 1.35,
+                                marginBottom: 8,
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              <strong style={{ display: "block" }}>
+                                {mediaFileName(image.image_url)}
+                              </strong>
+                              <span style={{ color: "var(--muted)" }}>
+                                {image.image_url}
+                              </span>
+                            </div>
+
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 6,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <button
+                                type="button"
+                                disabled={savingImage || index === 0}
+                                onClick={() => moveProductImage(image.id, -1)}
+                                style={{
+                                  ...buttonStyle,
+                                  padding: "7px 10px",
+                                  opacity: index === 0 ? 0.4 : 1,
+                                }}
+                              >
+                                ←
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={
+                                  savingImage ||
+                                  index === productImages.length - 1
+                                }
+                                onClick={() => moveProductImage(image.id, 1)}
+                                style={{
+                                  ...buttonStyle,
+                                  padding: "7px 10px",
+                                  opacity:
+                                    index === productImages.length - 1
+                                      ? 0.4
+                                      : 1,
+                                }}
+                              >
+                                →
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={savingImage}
+                                onClick={() => removeProductImage(image.id)}
+                                style={{
+                                  ...buttonStyle,
+                                  padding: "7px 10px",
+                                  background: "transparent",
+                                  color: "var(--ink)",
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div
                   style={{
@@ -951,21 +1819,20 @@ export default function AdminManagementPage() {
                       : "Add product"}
                   </button>
 
-                  {editingId && (
-                    <button
-                      type="button"
-                      onClick={resetProductForm}
-                      style={{
-                        ...buttonStyle,
-                        background: "transparent",
-                        color: "var(--ink)",
-                      }}
-                    >
-                      Cancel edit
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={resetProductForm}
+                    style={{
+                      ...buttonStyle,
+                      background: "transparent",
+                      color: "var(--ink)",
+                    }}
+                  >
+                    {editingId ? "Cancel edit" : "Close"}
+                  </button>
                 </div>
               </form>
+              )}
 
               {loading ? (
                 <p>Loading products…</p>
@@ -1263,9 +2130,11 @@ export default function AdminManagementPage() {
                             <option value="contacted">
                               Contacted
                             </option>
-                            <option value="accepted">
-                              Accepted
-                            </option>
+                            {request.status === "accepted" && (
+                              <option value="accepted">
+                                Accepted · Bespoke order created
+                              </option>
+                            )}
                             <option value="rejected">
                               Rejected
                             </option>
@@ -1273,6 +2142,52 @@ export default function AdminManagementPage() {
                               Completed
                             </option>
                           </select>
+                        </div>
+
+                        <div>
+                          <label
+                            style={{
+                              display: "block",
+                              marginBottom: 6,
+                              fontSize: 12,
+                              color: "var(--muted)",
+                            }}
+                          >
+                            Final bespoke price (₹)
+                          </label>
+
+                          <input
+                            type="number"
+                            min="1"
+                            step="0.01"
+                            value={
+                              priceDraft[request.id] ??
+                              (request.final_price != null
+                                ? String(request.final_price)
+                                : "")
+                            }
+                            onChange={(e) =>
+                              setPriceDraft((previous) => ({
+                                ...previous,
+                                [request.id]: e.target.value,
+                              }))
+                            }
+                            disabled={Boolean(request.order_id)}
+                            placeholder="Final approved price"
+                            style={inputStyle}
+                          />
+
+                          {request.order_id && (
+                            <div
+                              style={{
+                                marginTop: 8,
+                                fontSize: 12,
+                                color: "var(--muted)",
+                              }}
+                            >
+                              BESPOKE ORDER CREATED · {request.order_id}
+                            </div>
+                          )}
                         </div>
 
                         <div>
@@ -1307,23 +2222,49 @@ export default function AdminManagementPage() {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          saveBespokeRequest(request)
-                        }
-                        disabled={
-                          savingRequest === request.id
-                        }
+                      <div
                         style={{
-                          ...buttonStyle,
+                          display: "flex",
+                          gap: 10,
+                          flexWrap: "wrap",
                           marginTop: 14,
                         }}
                       >
-                        {savingRequest === request.id
-                          ? "Saving…"
-                          : "Save request"}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => saveBespokeRequest(request)}
+                          disabled={savingRequest === request.id}
+                          style={buttonStyle}
+                        >
+                          {savingRequest === request.id
+                            ? "Saving…"
+                            : "Save request"}
+                        </button>
+
+                        {!request.order_id && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              approveAndCreateBespokeOrder(request)
+                            }
+                            disabled={savingRequest === request.id}
+                            className="button button-dark"
+                          >
+                            {savingRequest === request.id
+                              ? "Creating…"
+                              : "Approve & Create Bespoke Order"}
+                          </button>
+                        )}
+
+                        {request.order_id && (
+                          <a
+                            href="/admin"
+                            className="button button-dark"
+                          >
+                            View Bespoke Order
+                          </a>
+                        )}
+                      </div>
                     </article>
                   ))}
                 </div>

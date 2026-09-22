@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import AdminNav from "@/components/AdminNav";
 
 type Product = {
   id: string;
@@ -316,40 +317,7 @@ export default function StockManagementPage() {
 
           {/* ADMIN NAVIGATION */}
 
-          <nav
-            style={{
-              display: "flex",
-              gap: "28px",
-              flexWrap: "wrap",
-              borderTop: "1px solid var(--line)",
-              borderBottom: "1px solid var(--line)",
-              padding: "17px 0",
-              marginBottom: "35px",
-              fontSize: "12px",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-            }}
-          >
-            <Link href="/admin">Orders</Link>
-
-            <Link href="/admin/customers">
-              Customers
-            </Link>
-
-            <Link href="/admin/management">
-              Bespoke & Catalogue
-            </Link>
-
-            <Link
-              href="/admin/stock"
-              style={{
-                fontWeight: 600,
-                borderBottom: "1px solid currentColor",
-              }}
-            >
-              Stock Management
-            </Link>
-          </nav>
+          <AdminNav />
 
           {/* MESSAGES */}
 

@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { formatINR, getProducts, type Product } from "@/lib/products";
 import { supabase } from "@/lib/supabase";
 
 export default function Header() {
+  const router = useRouter();
   const [count, setCount] = useState(0);
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -15,6 +17,9 @@ export default function Header() {
   const [productsLoaded, setProductsLoaded] = useState(false);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
 
   const [isAdmin, setIsAdmin] = useState(false);
   /* =========================================
@@ -33,17 +38,23 @@ export default function Header() {
 
         if (userError || !user) {
           if (mounted) {
+            setIsLoggedIn(false);
             setIsAdmin(false);
+            setAccountMenuOpen(false);
           }
 
           return;
+        }
+
+        if (mounted) {
+          setIsLoggedIn(true);
         }
 
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
           .select("is_admin")
           .eq("id", user.id)
-          .single();
+          .maybeSingle();
 
         if (profileError) {
           console.error(
@@ -92,6 +103,30 @@ export default function Header() {
     };
   }, []);
 
+
+  /* =========================================
+     CLOSE ACCOUNT MENU WHEN CLICKING OUTSIDE
+  ========================================= */
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        accountMenuRef.current &&
+        !accountMenuRef.current.contains(event.target as Node)
+      ) {
+        setAccountMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+
+    return () => {
+      document.removeEventListener(
+        "mousedown",
+        handleOutsideClick
+      );
+    };
+  }, []);
 
   /* =========================================
      CART COUNT
@@ -206,6 +241,23 @@ export default function Header() {
 
   const closeMobileMenu = () => {
     setMenuOpen(false);
+    setAccountMenuOpen(false);
+  };
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      console.error("Unable to log out:", error);
+      return;
+    }
+
+    setIsLoggedIn(false);
+    setIsAdmin(false);
+    setAccountMenuOpen(false);
+    setMenuOpen(false);
+    router.replace("/");
+    router.refresh();
   };
 
   return (
@@ -341,13 +393,137 @@ export default function Header() {
 
           {/* ACCOUNT */}
 
-          <Link
-            href="/account"
-            aria-label="Account"
-            onClick={closeMobileMenu}
+          <div
+            ref={accountMenuRef}
+            style={{
+              position: "relative",
+              display: "contents",
+            }}
           >
-            Account
-          </Link>
+            <a
+              href="#"
+              aria-label="Account"
+              aria-expanded={accountMenuOpen}
+              aria-haspopup="menu"
+              onClick={(event) => {
+                event.preventDefault();
+
+                setAccountMenuOpen(
+                  (current) => !current
+                );
+              }}
+            >
+              Account
+            </a>
+
+            {accountMenuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: "35px",
+                  width: "230px",
+                  background: "#faf9f6",
+                  border:
+                    "1px solid rgba(20,20,20,0.10)",
+                  boxShadow:
+                    "0 18px 45px rgba(20,20,20,0.08)",
+                  padding: "8px 0",
+                  zIndex: 9999,
+                }}
+              >
+                <Link
+                  href="/account"
+                  role="menuitem"
+                  onClick={() =>
+                    setAccountMenuOpen(false)
+                  }
+                  style={{
+                    display: "block",
+                    padding: "14px 20px",
+                    color: "#1a1a1a",
+                    textDecoration: "none",
+                    fontFamily: "inherit",
+                    fontSize: "11px",
+                    fontWeight: 400,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  My Account
+                </Link>
+
+                {isLoggedIn && (
+                  <>
+                    <div
+                      style={{
+                        height: "1px",
+                        background:
+                          "rgba(20,20,20,0.08)",
+                        margin: "0 20px",
+                      }}
+                    />
+
+                    <Link
+                      href="/account/orders"
+                      role="menuitem"
+                      onClick={() =>
+                        setAccountMenuOpen(false)
+                      }
+                      style={{
+                        display: "block",
+                        padding: "14px 20px",
+                        color: "#1a1a1a",
+                        textDecoration: "none",
+                        fontFamily: "inherit",
+                        fontSize: "11px",
+                        fontWeight: 400,
+                        letterSpacing: "0.12em",
+                        textTransform: "uppercase",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      My Orders
+                    </Link>
+                    <div
+                      style={{
+                        height: "1px",
+                        background:
+                          "rgba(20,20,20,0.08)",
+                        margin: "0 20px",
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleLogout}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        border: "none",
+                        background: "transparent",
+                        padding: "14px 20px",
+                        color: "#1a1a1a",
+                        fontFamily: "inherit",
+                        fontSize: "11px",
+                        fontWeight: 400,
+                        letterSpacing: "0.12em",
+                        textTransform: "uppercase",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Log out
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* BAG */}
 
@@ -421,12 +597,63 @@ export default function Header() {
             About us
           </Link>
 
-          <Link
-            href="/account"
-            onClick={closeMobileMenu}
+          <a
+            href="#"
+            onClick={(event) => {
+              event.preventDefault();
+
+              setAccountMenuOpen(
+                (current) => !current
+              );
+            }}
           >
             Account
-          </Link>
+          </a>
+
+          {accountMenuOpen && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "14px",
+                paddingLeft: "18px",
+              }}
+            >
+              <Link
+                href="/account"
+                onClick={closeMobileMenu}
+              >
+                My Account
+              </Link>
+
+              {isLoggedIn && (
+                <Link
+                  href="/account/orders"
+                  onClick={closeMobileMenu}
+                >
+                  My Orders
+                </Link>
+              )}
+
+              {isLoggedIn && (
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    padding: 0,
+                    color: "inherit",
+                    font: "inherit",
+                    textAlign: "left",
+                    cursor: "pointer",
+                  }}
+                >
+                  Log out
+                </button>
+              )}
+            </div>
+          )}
 
           <Link
             href="/saved-designs"

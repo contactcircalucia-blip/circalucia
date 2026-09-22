@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import AdminNav from "@/components/AdminNav";
 
 type Order = {
   id: string;
@@ -11,8 +12,18 @@ type Order = {
   status: string | null;
   subtotal: number | null;
   shipping_amount: number | null;
+  tax_amount?: number | null;
+  discount_amount?: number | null;
   total_amount: number | null;
   currency: string | null;
+
+  promotion_id?: string | null;
+  promo_code?: string | null;
+
+  payment_status?: string | null;
+  razorpay_order_id?: string | null;
+  razorpay_payment_id?: string | null;
+  paid_at?: string | null;
   shipping_address: Record<string, any> | null;
   customer_notes: string | null;
   created_at: string;
@@ -25,6 +36,15 @@ type Order = {
   shipping_provider?: string | null;
   shipped_at?: string | null;
   delivered_at?: string | null;
+};
+
+type ReturnStatusInfo = {
+  id: string;
+  order_id: string;
+  return_number: string;
+  request_type: string;
+  status: string;
+  requested_at: string;
 };
 
 type OrderItem = {
@@ -122,6 +142,8 @@ function normalizeTrackingUrl(value: string | null | undefined) {
 
 export default function AdminPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [returnStatuses, setReturnStatuses] = useState<Record<string, ReturnStatusInfo>>({});
+  const [bespokeOrderIds, setBespokeOrderIds] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -221,7 +243,52 @@ export default function AdminPage() {
         throw new Error(rpcError.message);
       }
 
-      setOrders((data || []) as Order[]);
+      const loadedOrders = (data || []) as Order[];
+      setOrders(loadedOrders);
+
+      if (loadedOrders.length === 0) {
+        setReturnStatuses({});
+        setBespokeOrderIds({});
+      } else {
+        const orderIds = loadedOrders.map((order) => order.id);
+
+        const { data: bespokeData, error: bespokeError } = await supabase
+          .from("bespoke_requests")
+          .select("order_id")
+          .in("order_id", orderIds);
+
+        if (bespokeError) {
+          console.error(bespokeError);
+          setBespokeOrderIds({});
+        } else {
+          const nextBespokeIds: Record<string, boolean> = {};
+          for (const row of bespokeData || []) {
+            if (row.order_id) nextBespokeIds[row.order_id] = true;
+          }
+          setBespokeOrderIds(nextBespokeIds);
+        }
+
+        const { data: returnData, error: returnError } = await supabase
+          .from("return_requests")
+          .select("id, order_id, return_number, request_type, status, requested_at")
+          .in("order_id", orderIds)
+          .order("requested_at", { ascending: false });
+
+        if (returnError) {
+          console.error(returnError);
+          throw new Error(returnError.message);
+        }
+
+        const latestByOrder: Record<string, ReturnStatusInfo> = {};
+
+        for (const row of (returnData || []) as ReturnStatusInfo[]) {
+          if (!latestByOrder[row.order_id]) {
+            latestByOrder[row.order_id] = row;
+          }
+        }
+
+        setReturnStatuses(latestByOrder);
+      }
     } catch (err: any) {
       console.error(err);
       setError(err?.message || "Unable to load orders.");
@@ -555,6 +622,28 @@ export default function AdminPage() {
 
       setOrders(updatedOrders);
 
+      if (updatedOrders.length > 0) {
+        const { data: returnData, error: returnError } = await supabase
+          .from("return_requests")
+          .select("id, order_id, return_number, request_type, status, requested_at")
+          .in("order_id", updatedOrders.map((order) => order.id))
+          .order("requested_at", { ascending: false });
+
+        if (returnError) {
+          console.error(returnError);
+        } else {
+          const latestByOrder: Record<string, ReturnStatusInfo> = {};
+
+          for (const row of (returnData || []) as ReturnStatusInfo[]) {
+            if (!latestByOrder[row.order_id]) {
+              latestByOrder[row.order_id] = row;
+            }
+          }
+
+          setReturnStatuses(latestByOrder);
+        }
+      }
+
       /*
        * SEND CUSTOMER EMAIL
        */
@@ -827,6 +916,13 @@ export default function AdminPage() {
         order.customer_notes,
         order.carrier,
         order.tracking_number,
+        order.promo_code,
+        order.payment_status,
+        order.razorpay_order_id,
+        order.razorpay_payment_id,
+        returnStatuses[order.id]?.status,
+        returnStatuses[order.id]?.return_number,
+        returnStatuses[order.id]?.request_type,
         order.shipping_address?.full_name,
         order.shipping_address?.phone,
         order.shipping_address?.email,
@@ -839,7 +935,7 @@ export default function AdminPage() {
 
       return searchableText.includes(query);
     });
-  }, [orders, search, statusFilter]);
+  }, [orders, search, statusFilter, returnStatuses]);
 
   /*
    * ------------------------------------------------------------
@@ -1010,16 +1106,7 @@ export default function AdminPage() {
             </button>
           </div>
 
-          <nav aria-label="Admin sections" style={{
-            display:"flex",alignItems:"center",gap:"28px",flexWrap:"wrap",
-            borderTop:"1px solid var(--line)",borderBottom:"1px solid var(--line)",
-            padding:"14px 0",marginBottom:"25px"
-          }}>
-            <Link href="/admin" style={{color:"var(--ink)",textDecoration:"underline",textUnderlineOffset:"6px",fontWeight:600,fontSize:"12px",letterSpacing:"0.08em",textTransform:"uppercase"}}>Orders</Link>
-            <Link href="/admin/customers" style={{color:"var(--ink)",textDecoration:"none",fontSize:"12px",letterSpacing:"0.08em",textTransform:"uppercase"}}>Customers</Link>
-            <Link href="/admin/management" style={{color:"var(--ink)",textDecoration:"none",fontSize:"12px",letterSpacing:"0.08em",textTransform:"uppercase"}}>Bespoke &amp; Catalogue</Link>
-            <Link href="/admin/stock" style={{color:"var(--ink)",textDecoration:"none",fontSize:"12px",letterSpacing:"0.08em",textTransform:"uppercase"}}>Stock Management</Link>
-          </nav>
+          <AdminNav />
 
           {message && (
             <div
@@ -1201,6 +1288,7 @@ export default function AdminPage() {
                 const items = orderItems[order.id] || [];
 
                 const shipping = getShippingForm(order);
+                const currentReturn = returnStatuses[order.id];
 
                 return (
                   <article
@@ -1273,6 +1361,42 @@ export default function AdminPage() {
                                 order.status
                               )}
                             </span>
+
+                            {bespokeOrderIds[order.id] && (
+                              <span
+                                style={{
+                                  padding: "5px 9px",
+                                  border: "1px solid var(--ink)",
+                                  background: "var(--ink)",
+                                  color: "var(--paper)",
+                                  fontSize: "11px",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.08em",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Bespoke Order
+                              </span>
+                            )}
+
+                            {currentReturn && (
+                              <span
+                                title={`Return request ${currentReturn.return_number}`}
+                                style={{
+                                  padding: "5px 9px",
+                                  border: "1px solid var(--ink)",
+                                  background: "var(--cream)",
+                                  fontSize: "11px",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.06em",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {currentReturn.request_type === "replacement"
+                                  ? `Replacement · ${getStatusLabel(currentReturn.status)}`
+                                  : `Return · ${getStatusLabel(currentReturn.status)}`}
+                              </span>
+                            )}
                           </div>
 
                           <div
@@ -1323,6 +1447,57 @@ export default function AdminPage() {
                           padding: "25px",
                         }}
                       >
+                        {currentReturn && (
+                          <div
+                            style={{
+                              padding: "16px 18px",
+                              border: "1px solid var(--line)",
+                              background: "var(--cream)",
+                              marginBottom: "25px",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: "16px",
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <div>
+                              <div
+                                style={{
+                                  fontSize: "11px",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.1em",
+                                  color: "var(--muted)",
+                                  marginBottom: "5px",
+                                }}
+                              >
+                                After-sales status
+                              </div>
+                              <strong>
+                                {currentReturn.request_type === "replacement"
+                                  ? "Replacement"
+                                  : "Return & Refund"}{" "}
+                                · {getStatusLabel(currentReturn.status)}
+                              </strong>
+                              <div style={{fontSize:"12px",color:"var(--muted)",marginTop:"5px"}}>
+                                {currentReturn.return_number}
+                              </div>
+                            </div>
+
+                            <Link
+                              href="/admin/returns"
+                              style={{
+                                color: "var(--ink)",
+                                fontSize: "12px",
+                                textDecoration: "underline",
+                                textUnderlineOffset: "4px",
+                              }}
+                            >
+                              Open Returns & Replacements
+                            </Link>
+                          </div>
+                        )}
+
                         {/* ORDER INFO */}
 
                         <div
@@ -1436,7 +1611,27 @@ export default function AdminPage() {
 
                               <div>
                                 <strong>
-                                  Total:
+                                  Tax:
+                                </strong>{" "}
+                                {formatCurrency(
+                                  order.tax_amount
+                                )}
+                              </div>
+
+                              <div>
+                                <strong>
+                                  Promo discount:
+                                </strong>{" "}
+                                {order.promo_code
+                                  ? `− ${formatCurrency(
+                                      order.discount_amount
+                                    )}`
+                                  : formatCurrency(0)}
+                              </div>
+
+                              <div>
+                                <strong>
+                                  Final total:
                                 </strong>{" "}
                                 {formatCurrency(
                                   order.total_amount
@@ -1449,6 +1644,155 @@ export default function AdminPage() {
                                 </strong>{" "}
                                 {order.currency ||
                                   "INR"}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* PROMOTION & PAYMENT */}
+
+                        <div
+                          style={{
+                            padding: "20px",
+                            border:
+                              "1px solid var(--line)",
+                            marginBottom: "25px",
+                          }}
+                        >
+                          <h3
+                            style={{
+                              marginBottom: "15px",
+                              fontSize: "12px",
+                              textTransform:
+                                "uppercase",
+                              letterSpacing:
+                                "0.12em",
+                              color: "var(--muted)",
+                            }}
+                          >
+                            Promotion & payment
+                          </h3>
+
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns:
+                                "repeat(auto-fit, minmax(220px, 1fr))",
+                              gap: "18px 30px",
+                              fontSize: "14px",
+                              lineHeight: 1.8,
+                            }}
+                          >
+                            <div>
+                              <div>
+                                <strong>
+                                  Promotion:
+                                </strong>{" "}
+                                {order.promo_code ? (
+                                  <span
+                                    style={{
+                                      letterSpacing:
+                                        "0.06em",
+                                    }}
+                                  >
+                                    {order.promo_code}
+                                  </span>
+                                ) : (
+                                  "No promotion used"
+                                )}
+                              </div>
+
+                              {order.promo_code && (
+                                <>
+                                  <div>
+                                    <strong>
+                                      Discount:
+                                    </strong>{" "}
+                                    −{" "}
+                                    {formatCurrency(
+                                      order.discount_amount
+                                    )}
+                                  </div>
+
+                                  <div>
+                                    <strong>
+                                      Promotion ID:
+                                    </strong>{" "}
+                                    {order.promotion_id ||
+                                      "—"}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                            <div>
+                              <div>
+                                <strong>
+                                  Used by:
+                                </strong>{" "}
+                                {order.shipping_address
+                                  ?.full_name ||
+                                  "—"}
+                              </div>
+
+                              <div>
+                                <strong>
+                                  Customer email:
+                                </strong>{" "}
+                                {order.shipping_address
+                                  ?.email || "—"}
+                              </div>
+
+                              <div>
+                                <strong>
+                                  Customer phone:
+                                </strong>{" "}
+                                {order.shipping_address
+                                  ?.phone || "—"}
+                              </div>
+
+                              <div>
+                                <strong>
+                                  User ID:
+                                </strong>{" "}
+                                {order.user_id || "Guest"}
+                              </div>
+                            </div>
+
+                            <div>
+                              <div>
+                                <strong>
+                                  Payment:
+                                </strong>{" "}
+                                {getStatusLabel(
+                                  order.payment_status ||
+                                    "pending"
+                                )}
+                              </div>
+
+                              <div>
+                                <strong>
+                                  Paid at:
+                                </strong>{" "}
+                                {formatDate(
+                                  order.paid_at
+                                )}
+                              </div>
+
+                              <div>
+                                <strong>
+                                  Razorpay order:
+                                </strong>{" "}
+                                {order.razorpay_order_id ||
+                                  "—"}
+                              </div>
+
+                              <div>
+                                <strong>
+                                  Razorpay payment:
+                                </strong>{" "}
+                                {order.razorpay_payment_id ||
+                                  "—"}
                               </div>
                             </div>
                           </div>
@@ -1569,6 +1913,9 @@ export default function AdminPage() {
                         </div>
 
                         {/* SHIPPING */}
+
+                        {order.status === "ready_to_ship" && (
+
 
                         <div
                           style={{
@@ -1741,6 +2088,7 @@ export default function AdminPage() {
                             )}
                           </div>
                         </div>
+                        )}
 
                         {/* CUSTOMER / SHIPPING ADDRESS */}
 
@@ -2058,48 +2406,170 @@ export default function AdminPage() {
                                   </div>
 
                                   {item.customization &&
-                                    Object.keys(
-                                      item.customization
-                                    ).length >
-                                      0 && (
-                                      <div
-                                        style={{
-                                          marginTop:
-                                            "14px",
-                                          paddingTop:
-                                            "14px",
-                                          borderTop:
-                                            "1px solid var(--line)",
-                                          fontSize:
-                                            "13px",
-                                        }}
-                                      >
-                                        <strong>
-                                          Customization
-                                        </strong>
+                                    (() => {
+                                      const c =
+                                        item.customization as Record<
+                                          string,
+                                          unknown
+                                        >;
 
-                                        <pre
+                                      const shipping =
+                                        Number(
+                                          c.line_shipping ??
+                                            c.shipping_charge ??
+                                            0
+                                        ) || 0;
+                                      const tax =
+                                        Number(c.line_tax ?? 0) ||
+                                        0;
+                                      const taxPercent =
+                                        Number(
+                                          c.tax_percent ?? 0
+                                        ) || 0;
+
+                                      const internalKeys =
+                                        new Set([
+                                          "variant_id",
+                                          "inventory_source",
+                                          "shipping_charge",
+                                          "line_shipping",
+                                          "tax_percent",
+                                          "line_tax",
+                                        ]);
+
+                                      const customerDetails =
+                                        Object.entries(c).filter(
+                                          ([key, value]) =>
+                                            !internalKeys.has(
+                                              key
+                                            ) &&
+                                            value !== null &&
+                                            value !== undefined &&
+                                            String(value).trim() !==
+                                              ""
+                                        );
+
+                                      return (
+                                        <div
                                           style={{
                                             marginTop:
-                                              "8px",
-                                            whiteSpace:
-                                              "pre-wrap",
-                                            wordBreak:
-                                              "break-word",
-                                            fontFamily:
-                                              "inherit",
-                                            color:
-                                              "var(--muted)",
+                                              "14px",
+                                            paddingTop:
+                                              "14px",
+                                            borderTop:
+                                              "1px solid var(--line)",
+                                            fontSize:
+                                              "13px",
+                                            lineHeight: 1.7,
                                           }}
                                         >
-                                          {JSON.stringify(
-                                            item.customization,
-                                            null,
-                                            2
+                                          <div
+                                            style={{
+                                              display:
+                                                "grid",
+                                              gridTemplateColumns:
+                                                "repeat(auto-fit, minmax(160px, 1fr))",
+                                              gap: "8px 24px",
+                                              color:
+                                                "var(--muted)",
+                                            }}
+                                          >
+                                            <div>
+                                              <strong
+                                                style={{
+                                                  color:
+                                                    "var(--ink)",
+                                                }}
+                                              >
+                                                Shipping:
+                                              </strong>{" "}
+                                              {formatCurrency(
+                                                shipping
+                                              )}
+                                            </div>
+
+                                            <div>
+                                              <strong
+                                                style={{
+                                                  color:
+                                                    "var(--ink)",
+                                                }}
+                                              >
+                                                Tax:
+                                              </strong>{" "}
+                                              {formatCurrency(
+                                                tax
+                                              )}
+                                              {taxPercent > 0
+                                                ? ` (${taxPercent}%)`
+                                                : ""}
+                                            </div>
+                                          </div>
+
+                                          {customerDetails.length >
+                                            0 && (
+                                            <div
+                                              style={{
+                                                marginTop:
+                                                  "12px",
+                                              }}
+                                            >
+                                              <strong>
+                                                Customer
+                                                customization
+                                              </strong>
+
+                                              <div
+                                                style={{
+                                                  marginTop:
+                                                    "6px",
+                                                  display:
+                                                    "grid",
+                                                  gap: "4px",
+                                                  color:
+                                                    "var(--muted)",
+                                                }}
+                                              >
+                                                {customerDetails.map(
+                                                  ([
+                                                    key,
+                                                    value,
+                                                  ]) => (
+                                                    <div
+                                                      key={
+                                                        key
+                                                      }
+                                                    >
+                                                      {key
+                                                        .replace(
+                                                          /_/g,
+                                                          " "
+                                                        )
+                                                        .replace(
+                                                          /\b\w/g,
+                                                          (
+                                                            char
+                                                          ) =>
+                                                            char.toUpperCase()
+                                                        )}
+                                                      :{" "}
+                                                      {typeof value ===
+                                                        "object"
+                                                        ? JSON.stringify(
+                                                            value
+                                                          )
+                                                        : String(
+                                                            value
+                                                          )}
+                                                    </div>
+                                                  )
+                                                )}
+                                              </div>
+                                            </div>
                                           )}
-                                        </pre>
-                                      </div>
-                                    )}
+                                        </div>
+                                      );
+                                    })()}
                                 </div>
                               ))}
                             </div>

@@ -8,6 +8,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import AdminNav from "@/components/AdminNav";
 
 type Customer = {
   id: string;
@@ -731,12 +732,7 @@ export default function AdminCustomersPage() {
           </button>
         </div>
 
-        <nav className="cl-admin-nav" aria-label="Admin sections">
-          <Link href="/admin">Orders</Link>
-          <Link href="/admin/customers" className="active">Customers</Link>
-          <Link href="/admin/management">Bespoke &amp; Catalogue</Link>
-          <Link href="/admin/stock">Stock Management</Link>
-        </nav>
+        <AdminNav />
 
         {/* ERROR */}
 

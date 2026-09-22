@@ -1,106 +1,156 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-const STORAGE_KEY = "cl-saved-designs";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { supabase } from "@/lib/supabase";
 
 type SaveDesignButtonProps = {
   productId: string;
 };
 
-export default function SaveDesignButton({
-  productId,
-}: SaveDesignButtonProps) {
+export default function SaveDesignButton({ productId }: SaveDesignButtonProps) {
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
+  const [loginRequired, setLoginRequired] = useState(false);
 
-  useEffect(() => {
+  const loadSavedState = useCallback(async () => {
+    setLoading(true);
+
     try {
-      const savedDesigns = JSON.parse(
-        localStorage.getItem(STORAGE_KEY) || "[]"
-      );
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      setSaved(savedDesigns.includes(productId));
-    } catch {
+      if (!user) {
+        setSaved(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("saved_products")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("product_id", productId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      setSaved(Boolean(data));
+    } catch (error) {
+      console.error("Unable to check saved product:", error);
       setSaved(false);
+    } finally {
+      setLoading(false);
     }
   }, [productId]);
 
-  const toggleSaved = () => {
+  useEffect(() => {
+    loadSavedState();
+  }, [loadSavedState]);
+
+  async function toggleSaved() {
+    if (working) return;
+
+    setWorking(true);
+    setLoginRequired(false);
+
     try {
-      const savedDesigns: string[] = JSON.parse(
-        localStorage.getItem(STORAGE_KEY) || "[]"
-      );
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      let updatedDesigns: string[];
+      if (!user) {
+        setLoginRequired(true);
+        return;
+      }
 
-      if (savedDesigns.includes(productId)) {
-        updatedDesigns = savedDesigns.filter(
-          (id) => id !== productId
-        );
+      if (saved) {
+        const { error } = await supabase
+          .from("saved_products")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("product_id", productId);
 
+        if (error) throw error;
         setSaved(false);
       } else {
-        updatedDesigns = [...savedDesigns, productId];
+        const { error } = await supabase
+          .from("saved_products")
+          .upsert(
+            {
+              user_id: user.id,
+              product_id: productId,
+            },
+            {
+              onConflict: "user_id,product_id",
+              ignoreDuplicates: true,
+            }
+          );
 
+        if (error) throw error;
         setSaved(true);
       }
 
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(updatedDesigns)
-      );
-
-      window.dispatchEvent(
-        new Event("cl-saved-designs-updated")
-      );
+      window.dispatchEvent(new Event("cl-saved-designs-updated"));
     } catch (error) {
-      console.error("Unable to save design:", error);
+      console.error("Unable to update saved product:", error);
+    } finally {
+      setWorking(false);
     }
-  };
+  }
+
+  const disabled = loading || working;
 
   return (
-    <div
-      style={{
-        marginTop: "18px",
-      }}
-    >
+    <div style={{ marginTop: "12px" }}>
       <button
         type="button"
         onClick={toggleSaved}
-        aria-label={
-          saved
-            ? "Remove from saved designs"
-            : "Save design for later"
-        }
+        disabled={disabled}
+        aria-pressed={saved}
+        className="button"
         style={{
-          display: "inline-flex",
+          width: "100%",
+          display: "flex",
           alignItems: "center",
+          justifyContent: "center",
           gap: "9px",
-          padding: 0,
-          border: "none",
-          background: "transparent",
-          color: "inherit",
-          fontFamily: "inherit",
-          fontSize: "13px",
-          lineHeight: 1.4,
-          cursor: "pointer",
+          opacity: disabled ? 0.6 : 1,
+          cursor: disabled ? "not-allowed" : "pointer",
         }}
       >
-        <span
-          aria-hidden="true"
-          style={{
-            fontSize: "19px",
-            lineHeight: 1,
-            color: saved ? "#b3261e" : "inherit",
-          }}
-        >
+        <span aria-hidden="true" style={{ fontSize: "18px", lineHeight: 1 }}>
           {saved ? "♥" : "♡"}
         </span>
-
         <span>
-          {saved ? "Saved for later" : "Save for later"}
+          {loading
+            ? "LOADING..."
+            : working
+            ? "SAVING..."
+            : saved
+            ? "SAVED FOR LATER"
+            : "SAVE FOR LATER"}
         </span>
       </button>
+
+      {loginRequired && (
+        <div
+          style={{
+            marginTop: "12px",
+            padding: "12px 14px",
+            border: "1px solid var(--line)",
+            background: "var(--cream)",
+            fontSize: "12px",
+          }}
+        >
+          Please{" "}
+          <Link href="/account" style={{ color: "inherit", textDecoration: "underline" }}>
+            log in
+          </Link>{" "}
+          to save this design.
+        </div>
+      )}
     </div>
   );
 }

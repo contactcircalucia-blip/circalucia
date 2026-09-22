@@ -240,8 +240,66 @@ export default function PaymentPage() {
         },
       });
 
-      razorpay.on("payment.failed", (response: any) => {
-        console.error("Razorpay payment failed:", response);
+      razorpay.on("payment.failed", async (response: any) => {
+        console.warn("Razorpay payment failed:", response);
+
+        const failedPaymentId =
+          typeof response?.error?.metadata?.payment_id === "string"
+            ? response.error.metadata.payment_id
+            : null;
+
+        const failedRazorpayOrderId =
+          typeof response?.error?.metadata?.order_id === "string"
+            ? response.error.metadata.order_id
+            : created.razorpayOrderId;
+
+        try {
+          if (failedPaymentId && failedRazorpayOrderId) {
+            const failedResponse = await fetch(
+              "/api/razorpay/record-failed-payment",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                  orderId: order.id,
+                  razorpay_payment_id: failedPaymentId,
+                  razorpay_order_id: failedRazorpayOrderId,
+                }),
+              }
+            );
+
+            const failedResult = await failedResponse.json();
+
+            if (failedResponse.ok && failedResult.success) {
+              setOrder((current) =>
+                current
+                  ? {
+                      ...current,
+                      payment_status: "failed",
+                    }
+                  : current
+              );
+            } else {
+              console.warn(
+                "Unable to persist failed payment status:",
+                failedResult?.error || failedResponse.status
+              );
+            }
+          } else {
+            console.warn(
+              "Razorpay failed-payment callback did not include a payment ID."
+            );
+          }
+        } catch (recordError) {
+          console.warn(
+            "Unable to record failed payment status:",
+            recordError
+          );
+        }
+
         setErrorMessage(
           response?.error?.description ||
             "Payment failed. You can safely try again."

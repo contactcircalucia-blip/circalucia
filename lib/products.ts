@@ -6,21 +6,22 @@ export type Product = {
   name: string;
   collection: string | null;
   description: string | null;
-
   price: number;
-
-  // Product-level checkout charges
   shipping_charge: number;
   tax_percent: number;
-
   material: string | null;
   heel_height: string | null;
   image_url: string | null;
-
+  video_url: string | null;
   is_active: boolean;
   is_bespoke: boolean;
   featured_home: boolean;
-
+  product_details: string | null;
+  size_and_fit: string | null;
+  material_and_care: string | null;
+  delivery_note: string | null;
+  return_note: string | null;
+  specifications: Record<string, string> | null;
   created_at: string;
   updated_at: string;
 };
@@ -56,9 +57,7 @@ export async function getProduct(slug: string) {
   return data as Product;
 }
 
-export async function getProductVariants(
-  productId: string
-) {
+export async function getProductVariants(productId: string) {
   const { data, error } = await supabase
     .from("product_variants")
     .select("*")
@@ -67,11 +66,7 @@ export async function getProductVariants(
     .order("size", { ascending: true });
 
   if (error) {
-    console.error(
-      "Error fetching product variants:",
-      error
-    );
-
+    console.error("Error fetching product variants:", error);
     return [];
   }
 
@@ -86,44 +81,15 @@ export function formatINR(value: number) {
   }).format(Number(value || 0));
 }
 
-export function getProductImage(
-  product: Product
-) {
-  /*
-   * Admin/database image always wins.
-   *
-   * This means newly created Admin products
-   * automatically use their own image_url.
-   */
+export function getProductImage(product: Product) {
+  const databaseImage = product.image_url?.trim();
+  if (databaseImage) return databaseImage;
 
-  const databaseImage =
-    product.image_url?.trim();
+  const slug = product.slug?.toLowerCase();
 
-  if (databaseImage) {
-    return databaseImage;
-  }
-
-  /*
-   * Legacy collection fallbacks.
-   *
-   * These remain only for the original products
-   * if they do not have image_url set.
-   */
-
-  const slug =
-    product.slug?.toLowerCase();
-
-  if (slug === "the-luciana") {
-    return "/products/luciana.jpg";
-  }
-
-  if (slug === "the-aurora") {
-    return "/products/aurora.jpg";
-  }
-
-  if (slug === "the-celeste") {
-    return "/products/celeste.jpg";
-  }
+  if (slug === "the-luciana") return "/products/luciana.jpg";
+  if (slug === "the-aurora") return "/products/aurora.jpg";
+  if (slug === "the-celeste") return "/products/celeste.jpg";
 
   return null;
 }

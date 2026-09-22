@@ -47,6 +47,11 @@ export async function POST(request: Request) {
 
     // User-scoped client: authenticate the browser session and prove ownership.
     const userSupabase = createClient(supabaseUrl, publishableKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
       auth: {
         persistSession: false,
         autoRefreshToken: false,

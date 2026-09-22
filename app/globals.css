@@ -2866,3 +2866,28 @@ ADMIN — MOBILE
   }
 }
 
+/* CIRCA LUCIA — Footer navigation readability */
+
+.footer-links > div > span {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+
+.footer-links a {
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 768px) {
+  .footer-links > div > span {
+    font-size: 10px;
+  }
+
+  .footer-links a {
+    font-size: 14px;
+    margin-bottom: 9px;
+  }
+}

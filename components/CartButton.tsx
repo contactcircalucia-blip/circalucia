@@ -23,58 +23,8 @@ export default function CartButton({
   disabled = false,
 }: CartButtonProps) {
   const [added, setAdded] = useState(false);
-  const [cartQty, setCartQty] = useState(0);
   const [loginRequired, setLoginRequired] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(false);
-
-  /*
-   * ------------------------------------------------------------
-   * CART QUANTITY
-   * ------------------------------------------------------------
-   */
-
-  function getCartQty() {
-    try {
-      const cart = JSON.parse(
-        localStorage.getItem("cl-cart") || "[]"
-      );
-
-      if (!Array.isArray(cart)) {
-        setCartQty(0);
-        return;
-      }
-
-      const total = cart.reduce(
-        (sum: number, item: any) =>
-          sum + Number(item.qty || 0),
-        0
-      );
-
-      setCartQty(total);
-    } catch {
-      setCartQty(0);
-    }
-  }
-
-  useEffect(() => {
-    getCartQty();
-
-    function handleCartUpdate() {
-      getCartQty();
-    }
-
-    window.addEventListener(
-      "cl-cart-updated",
-      handleCartUpdate
-    );
-
-    return () => {
-      window.removeEventListener(
-        "cl-cart-updated",
-        handleCartUpdate
-      );
-    };
-  }, []);
 
   /*
    * ------------------------------------------------------------
@@ -90,6 +40,85 @@ export default function CartButton({
    *
    * variantId remains supported for older products that use it.
    */
+
+
+  /*
+   * ------------------------------------------------------------
+   * SYNC CUSTOMER BAG TO SUPABASE
+   * ------------------------------------------------------------
+   */
+
+  async function syncCartToSupabase(
+    userId: string,
+    cart: any[]
+  ) {
+    const now = new Date().toISOString();
+
+    const { data: bag, error: bagError } =
+      await supabase
+        .from("customer_bags")
+        .upsert(
+          {
+            user_id: userId,
+            updated_at: now,
+          },
+          {
+            onConflict: "user_id",
+          }
+        )
+        .select("id")
+        .single();
+
+    if (bagError || !bag) {
+      console.error(
+        "Unable to sync customer bag:",
+        bagError
+      );
+      return;
+    }
+
+    const { error: deleteError } =
+      await supabase
+        .from("customer_bag_items")
+        .delete()
+        .eq("bag_id", bag.id);
+
+    if (deleteError) {
+      console.error(
+        "Unable to refresh customer bag items:",
+        deleteError
+      );
+      return;
+    }
+
+    if (cart.length === 0) {
+      return;
+    }
+
+    const rows = cart.map((item: any) => ({
+      bag_id: bag.id,
+      product_id: item.productId ?? null,
+      slug: item.slug,
+      product_name: item.name,
+      selected_size: item.size ?? null,
+      quantity: Number(item.qty || 1),
+      unit_price: Number(item.price || 0),
+      image_url: item.image ?? null,
+      updated_at: now,
+    }));
+
+    const { error: insertError } =
+      await supabase
+        .from("customer_bag_items")
+        .insert(rows);
+
+    if (insertError) {
+      console.error(
+        "Unable to save customer bag items:",
+        insertError
+      );
+    }
+  }
 
   async function add() {
     if (
@@ -270,6 +299,15 @@ export default function CartButton({
       );
 
       /*
+       * Keep the authenticated customer's server-side bag in sync
+       * so Admin can see the current bag.
+       */
+      await syncCartToSupabase(
+        user.id,
+        cart
+      );
+
+      /*
        * Notify Header / Cart / other listeners.
        */
 
@@ -277,7 +315,6 @@ export default function CartButton({
         new Event("cl-cart-updated")
       );
 
-      getCartQty();
 
       /*
        * --------------------------------------------------------
@@ -337,9 +374,7 @@ export default function CartButton({
       >
         {checkingAuth
           ? "Checking..."
-          : disabled || stockQuantity <= 0
-          ? "Out of stock"
-          : "Commission this design"}
+          : "Add to bag"}
       </button>
 
       {/* ======================================================
@@ -430,56 +465,6 @@ export default function CartButton({
       )}
 
       {/* ======================================================
-          FLOATING CART BUTTON
-          ====================================================== */}
-
-      <Link
-        href="/cart"
-        aria-label={`Open bag, ${cartQty} item${
-          cartQty === 1 ? "" : "s"
-        }`}
-        className="floating-cart-button"
-      >
-        <svg
-          width="21"
-          height="21"
-          viewBox="0 0 24 24"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M3 4H5L7.2 14.2C7.4 15.1 8.2 15.8 9.1 15.8H17.4C18.3 15.8 19.1 15.2 19.4 14.3L21 8H6"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-
-          <circle
-            cx="9.5"
-            cy="19"
-            r="1.2"
-            fill="currentColor"
-          />
-
-          <circle
-            cx="17"
-            cy="19"
-            r="1.2"
-            fill="currentColor"
-          />
-        </svg>
-
-        {cartQty > 0 && (
-          <span className="floating-cart-count">
-            {cartQty > 99
-              ? "99+"
-              : cartQty}
-          </span>
-        )}
-      </Link>
-
-      {/* ======================================================
           STYLES
           ====================================================== */}
 
@@ -522,98 +507,11 @@ export default function CartButton({
             nowrap;
         }
 
-        .floating-cart-button {
-          position: fixed;
 
-          right: 24px;
-          bottom: 24px;
 
-          z-index: 9998;
 
-          width: 54px;
-          height: 54px;
 
-          display: flex;
 
-          align-items: center;
-
-          justify-content:
-            center;
-
-          background:
-            #141210;
-
-          color:
-            #f3eee6;
-
-          border:
-            1px solid #7a263a;
-
-          border-radius:
-            50%;
-
-          text-decoration:
-            none;
-
-          box-shadow:
-            0 10px 30px
-            rgba(0, 0, 0, 0.22);
-
-          transition:
-            transform 0.25s ease,
-            box-shadow 0.25s ease;
-        }
-
-        .floating-cart-button:hover {
-          transform:
-            translateY(-3px);
-
-          box-shadow:
-            0 15px 35px
-            rgba(0, 0, 0, 0.28);
-        }
-
-        .floating-cart-count {
-          position:
-            absolute;
-
-          top: -5px;
-          right: -5px;
-
-          min-width: 19px;
-
-          height: 19px;
-
-          display: flex;
-
-          align-items:
-            center;
-
-          justify-content:
-            center;
-
-          padding: 0 5px;
-
-          background:
-            #7a263a;
-
-          color:
-            #f3eee6;
-
-          border:
-            2px solid #f3eee6;
-
-          border-radius:
-            50%;
-
-          font-size:
-            10px;
-
-          line-height: 1;
-
-          font-weight:
-            600;
-        }
 
         @media (max-width: 600px) {
           .cart-added-notification {
@@ -642,12 +540,7 @@ export default function CartButton({
             gap: 6px;
           }
 
-          .floating-cart-button {
-            right: 16px;
-
-            bottom: 16px;
-          }
-        }
+  
       `}</style>
     </>
   );

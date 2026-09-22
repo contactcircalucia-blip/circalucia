@@ -19,6 +19,16 @@ type CartItem = {
   image?: string;
 };
 
+type AppliedPromo = {
+  promotionId: string;
+  code: string;
+  discountType: "percentage" | "fixed";
+  discountValue: number;
+  discountAmount: number;
+  minimumOrderValue: number;
+  maximumDiscount: number | null;
+};
+
 type SavedAddress = {
   id: string;
   full_name: string;
@@ -26,9 +36,14 @@ type SavedAddress = {
   address_line_1: string;
   address_line_2: string | null;
   city: string;
+  district: string | null;
   state: string;
   postal_code: string;
   country: string;
+  latitude: number | null;
+  longitude: number | null;
+  location_accuracy: number | null;
+  location_captured_at: string | null;
   is_default: boolean;
 };
 
@@ -38,9 +53,43 @@ type OrderResult = {
   order_number: string;
   status: string;
   subtotal: number;
+  discount_amount: number;
+  promo_code?: string | null;
   shipping_amount: number;
   total_amount: number;
   currency: string;
+};
+
+const INDIA_STATES = [
+  "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam",
+  "Bihar", "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir",
+  "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh",
+  "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha",
+  "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana",
+  "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+];
+
+const DISTRICTS_BY_STATE: Record<string, string[]> = {
+  "Uttar Pradesh": [
+    "Agra","Aligarh","Ambedkar Nagar","Amethi","Amroha","Auraiya","Ayodhya","Azamgarh",
+    "Baghpat","Bahraich","Ballia","Balrampur","Banda","Barabanki","Bareilly","Basti",
+    "Bhadohi","Bijnor","Budaun","Bulandshahr","Chandauli","Chitrakoot","Deoria","Etah",
+    "Etawah","Farrukhabad","Fatehpur","Firozabad","Gautam Buddha Nagar","Ghaziabad",
+    "Ghazipur","Gonda","Gorakhpur","Hamirpur","Hapur","Hardoi","Hathras","Jalaun",
+    "Jaunpur","Jhansi","Kannauj","Kanpur Dehat","Kanpur Nagar","Kasganj","Kaushambi",
+    "Kheri","Kushinagar","Lalitpur","Lucknow","Maharajganj","Mahoba","Mainpuri","Mathura",
+    "Mau","Meerut","Mirzapur","Moradabad","Muzaffarnagar","Pilibhit","Pratapgarh",
+    "Prayagraj","Rae Bareli","Rampur","Saharanpur","Sambhal","Sant Kabir Nagar",
+    "Shahjahanpur","Shamli","Shravasti","Siddharthnagar","Sitapur","Sonbhadra",
+    "Sultanpur","Unnao","Varanasi"
+  ],
+  "Delhi": ["Central Delhi","East Delhi","New Delhi","North Delhi","North East Delhi","North West Delhi","Shahdara","South Delhi","South East Delhi","South West Delhi","West Delhi"],
+  "Bihar": ["Araria","Arwal","Aurangabad","Banka","Begusarai","Bhagalpur","Bhojpur","Buxar","Darbhanga","East Champaran","Gaya","Gopalganj","Jamui","Jehanabad","Kaimur","Katihar","Khagaria","Kishanganj","Lakhisarai","Madhepura","Madhubani","Munger","Muzaffarpur","Nalanda","Nawada","Patna","Purnia","Rohtas","Saharsa","Samastipur","Saran","Sheikhpura","Sheohar","Sitamarhi","Siwan","Supaul","Vaishali","West Champaran"],
+  "Uttarakhand": ["Almora","Bageshwar","Chamoli","Champawat","Dehradun","Haridwar","Nainital","Pauri Garhwal","Pithoragarh","Rudraprayag","Tehri Garhwal","Udham Singh Nagar","Uttarkashi"],
+  "Rajasthan": ["Ajmer","Alwar","Banswara","Baran","Barmer","Bharatpur","Bhilwara","Bikaner","Bundi","Chittorgarh","Churu","Dausa","Dholpur","Dungarpur","Hanumangarh","Jaipur","Jaisalmer","Jalore","Jhalawar","Jhunjhunu","Jodhpur","Karauli","Kota","Nagaur","Pali","Pratapgarh","Rajsamand","Sawai Madhopur","Sikar","Sirohi","Sri Ganganagar","Tonk","Udaipur"],
+  "Haryana": ["Ambala","Bhiwani","Charkhi Dadri","Faridabad","Fatehabad","Gurugram","Hisar","Jhajjar","Jind","Kaithal","Karnal","Kurukshetra","Mahendragarh","Nuh","Palwal","Panchkula","Panipat","Rewari","Rohtak","Sirsa","Sonipat","Yamunanagar"],
+  "Punjab": ["Amritsar","Barnala","Bathinda","Faridkot","Fatehgarh Sahib","Fazilka","Ferozepur","Gurdaspur","Hoshiarpur","Jalandhar","Kapurthala","Ludhiana","Malerkotla","Mansa","Moga","Pathankot","Patiala","Rupnagar","Sahibzada Ajit Singh Nagar","Sangrur","Shaheed Bhagat Singh Nagar","Sri Muktsar Sahib","Tarn Taran"],
 };
 
 export default function Checkout() {
@@ -48,6 +97,7 @@ export default function Checkout() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
 
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -58,6 +108,12 @@ export default function Checkout() {
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
+  const [district, setDistrict] = useState("");
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
+  const [locationCapturedAt, setLocationCapturedAt] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
   const [pinCode, setPinCode] = useState("");
   const [addressLine2, setAddressLine2] = useState("");
   const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
@@ -174,6 +230,39 @@ export default function Checkout() {
 
         setCart(refreshedCart);
 
+        const savedPromoRaw = localStorage.getItem("cl-promo");
+        if (savedPromoRaw) {
+          try {
+            const savedPromo = JSON.parse(savedPromoRaw) as AppliedPromo;
+            const promoSubtotal = refreshedCart.reduce(
+              (sum, item) => sum + Number(item.price || 0) * Number(item.qty || 0),
+              0
+            );
+            const { data: promoData, error: promoError } = await supabase.rpc(
+              "validate_promotion_for_cart",
+              { p_code: savedPromo.code, p_items: refreshedCart.map((item) => ({ slug: item.slug, qty: item.qty, price: item.price })) }
+            );
+            if (!promoError && promoData?.valid === true) {
+              setAppliedPromo({
+                promotionId: promoData.promotion_id,
+                code: promoData.code,
+                discountType: promoData.discount_type,
+                discountValue: Number(promoData.discount_value),
+                discountAmount: Number(promoData.discount_amount),
+                minimumOrderValue: Number(promoData.minimum_order_value),
+                maximumDiscount:
+                  promoData.maximum_discount !== null
+                    ? Number(promoData.maximum_discount)
+                    : null,
+              });
+            } else {
+              localStorage.removeItem("cl-promo");
+            }
+          } catch {
+            localStorage.removeItem("cl-promo");
+          }
+        }
+
         // Keep local cart synchronized with the current Admin values.
         localStorage.setItem(
           "cl-cart",
@@ -199,7 +288,7 @@ export default function Checkout() {
 
         const { data: addressRows, error: addressError } = await supabase
           .from("addresses")
-          .select("id, full_name, phone, address_line_1, address_line_2, city, state, postal_code, country, is_default")
+          .select("id, full_name, phone, address_line_1, address_line_2, city, district, state, postal_code, country, latitude, longitude, location_accuracy, location_captured_at, is_default")
           .eq("user_id", user.id)
           .order("is_default", { ascending: false })
           .order("created_at", { ascending: false });
@@ -216,8 +305,13 @@ export default function Checkout() {
           setAddress(preferred.address_line_1 || "");
           setAddressLine2(preferred.address_line_2 || "");
           setCity(preferred.city || "");
+          setDistrict(preferred.district || "");
           setState(preferred.state || "");
           setPinCode(preferred.postal_code || "");
+          setLatitude(preferred.latitude ?? null);
+          setLongitude(preferred.longitude ?? null);
+          setLocationAccuracy(preferred.location_accuracy ?? null);
+          setLocationCapturedAt(preferred.location_captured_at ?? null);
           setAddingAddress(false);
         } else {
           setAddingAddress(true);
@@ -272,8 +366,12 @@ export default function Checkout() {
     0
   );
 
+  const displayedDiscount = appliedPromo
+    ? Math.min(Number(appliedPromo.discountAmount || 0), displayedSubtotal)
+    : 0;
+
   const displayedTotal =
-    displayedSubtotal +
+    Math.max(0, displayedSubtotal - displayedDiscount) +
     displayedShipping +
     displayedTax;
 
@@ -291,8 +389,13 @@ export default function Checkout() {
     setAddress(saved.address_line_1 || "");
     setAddressLine2(saved.address_line_2 || "");
     setCity(saved.city || "");
+    setDistrict(saved.district || "");
     setState(saved.state || "");
     setPinCode(saved.postal_code || "");
+    setLatitude(saved.latitude ?? null);
+    setLongitude(saved.longitude ?? null);
+    setLocationAccuracy(saved.location_accuracy ?? null);
+    setLocationCapturedAt(saved.location_captured_at ?? null);
   }
 
   function startNewAddress() {
@@ -301,8 +404,77 @@ export default function Checkout() {
     setAddress("");
     setAddressLine2("");
     setCity("");
+    setDistrict("");
     setState("");
     setPinCode("");
+    setLatitude(null);
+    setLongitude(null);
+    setLocationAccuracy(null);
+    setLocationCapturedAt(null);
+  }
+
+  async function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      setErrorMessage("Location services are not supported by this browser.");
+      return;
+    }
+
+    setLocating(true);
+    setErrorMessage("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
+
+        setLatitude(lat);
+        setLongitude(lng);
+        setLocationAccuracy(accuracy);
+        setLocationCapturedAt(new Date().toISOString());
+
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1`,
+            { headers: { "Accept-Language": "en" } }
+          );
+
+          if (!response.ok) throw new Error("Reverse geocoding failed.");
+
+          const result = await response.json();
+          const a = result?.address || {};
+
+          setAddress(
+            a.road || a.neighbourhood || a.suburb || address
+          );
+          setAddressLine2(
+            a.neighbourhood || a.suburb || addressLine2
+          );
+          setCity(
+            a.city || a.town || a.village || a.suburb || city
+          );
+          setDistrict(
+            a.state_district || a.county || a.district || district
+          );
+          setState(a.state || state);
+          setPinCode(a.postcode || pinCode);
+        } catch (locationError) {
+          console.error("Unable to fetch written address:", locationError);
+        } finally {
+          setLocating(false);
+        }
+      },
+      (locationError) => {
+        console.error("Unable to get current location:", locationError);
+        setLocating(false);
+        setErrorMessage(
+          locationError.code === locationError.PERMISSION_DENIED
+            ? "Location permission was not allowed. You can still enter your delivery address manually."
+            : "Unable to get your current location. Please try again or enter the address manually."
+        );
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
   }
 
   async function placeOrder() {
@@ -376,6 +548,14 @@ export default function Checkout() {
       return;
     }
 
+    if (!district.trim()) {
+      setErrorMessage(
+        "Please select or enter your district."
+      );
+
+      return;
+    }
+
     if (!pinCode.trim()) {
       setErrorMessage(
         "Please enter your PIN code."
@@ -422,12 +602,17 @@ export default function Checkout() {
             address_line_1: address.trim(),
             address_line_2: addressLine2.trim() || null,
             city: city.trim(),
+            district: district.trim(),
             state: state.trim(),
             postal_code: pinCode.trim(),
             country: "India",
+            latitude,
+            longitude,
+            location_accuracy: locationAccuracy,
+            location_captured_at: locationCapturedAt,
             is_default: !existingAddresses?.length,
           })
-          .select("id, full_name, phone, address_line_1, address_line_2, city, state, postal_code, country, is_default")
+          .select("id, full_name, phone, address_line_1, address_line_2, city, district, state, postal_code, country, latitude, longitude, location_accuracy, location_captured_at, is_default")
           .single();
 
         if (insertAddressError || !insertedAddress) {
@@ -448,9 +633,14 @@ export default function Checkout() {
         phone: phone.trim(),
         address: address.trim(),
         city: city.trim(),
+        district: district.trim(),
         state: state.trim(),
         pin_code: pinCode.trim(),
         country: "India",
+        latitude,
+        longitude,
+        location_accuracy: locationAccuracy,
+        location_captured_at: locationCapturedAt,
       };
 
       const { data, error } =
@@ -479,6 +669,9 @@ export default function Checkout() {
             p_customer_notes:
               customerNotes.trim() ||
               null,
+
+            p_promo_code:
+              appliedPromo?.code || null,
           }
         );
 
@@ -515,6 +708,12 @@ export default function Checkout() {
           setErrorMessage(
             "One of the selected variants is no longer available. Please return to your bag and select it again."
           );
+        } else if (message.includes("PROMO_")) {
+          setErrorMessage(
+            "This promotion is no longer valid for this order. Please return to your bag and apply it again."
+          );
+          localStorage.removeItem("cl-promo");
+          setAppliedPromo(null);
         } else {
           setErrorMessage(
             "We couldn't create your order. Please try again."
@@ -791,7 +990,7 @@ export default function Checkout() {
                       </span>
                       <span style={{ display: "block", marginTop: "5px", fontSize: "13px", lineHeight: 1.5 }}>
                         {saved.address_line_1}{saved.address_line_2 ? `, ${saved.address_line_2}` : ""}<br />
-                        {saved.city}, {saved.state} {saved.postal_code}<br />
+                        {saved.city}{saved.district ? `, ${saved.district}` : ""}, {saved.state} {saved.postal_code}<br />
                         {saved.phone}
                       </span>
                       {saved.is_default && <span style={{ display: "inline-block", marginTop: "6px", fontSize: "11px", letterSpacing: ".06em" }}>DEFAULT ADDRESS</span>}
@@ -819,28 +1018,68 @@ export default function Checkout() {
             }
           />
 
-          <div className="two-inputs">
-            <input
-              className="input"
-              placeholder="City"
-              value={city}
-              onChange={(event) =>
-                setCity(
-                  event.target.value
-                )
-              }
-            />
+          <button
+            type="button"
+            className="button button-dark"
+            onClick={() => void useCurrentLocation()}
+            disabled={locating}
+            style={{ width: "100%", marginBottom: "14px" }}
+          >
+            {locating ? "Fetching location..." : "⌖ Use current location"}
+          </button>
 
-            <input
+          {latitude !== null && longitude !== null && (
+            <p className="small-note" style={{ margin: "0 0 14px" }}>
+              Delivery location pin captured. Please confirm the address below.
+            </p>
+          )}
+
+          <input
+            className="input"
+            placeholder="City / Locality"
+            value={city}
+            onChange={(event) => setCity(event.target.value)}
+          />
+
+          <div className="two-inputs">
+            <select
               className="input"
-              placeholder="State"
               value={state}
-              onChange={(event) =>
-                setState(
-                  event.target.value
-                )
-              }
-            />
+              onChange={(event) => {
+                setState(event.target.value);
+                setDistrict("");
+              }}
+            >
+              <option value="">Select state / UT</option>
+              {INDIA_STATES.map((stateName) => (
+                <option key={stateName} value={stateName}>
+                  {stateName}
+                </option>
+              ))}
+            </select>
+
+            {DISTRICTS_BY_STATE[state] ? (
+              <select
+                className="input"
+                value={district}
+                onChange={(event) => setDistrict(event.target.value)}
+              >
+                <option value="">Select district</option>
+                {DISTRICTS_BY_STATE[state].map((districtName) => (
+                  <option key={districtName} value={districtName}>
+                    {districtName}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="input"
+                placeholder={state ? "District" : "Select state first"}
+                value={district}
+                onChange={(event) => setDistrict(event.target.value)}
+                disabled={!state}
+              />
+            )}
           </div>
 
           <input
@@ -1023,6 +1262,13 @@ export default function Checkout() {
           </span>
         </div>
 
+        {displayedDiscount > 0 && (
+          <div className="billing-line" style={{ color: "#7a263a" }}>
+            <span>Promo discount {appliedPromo?.code ? `(${appliedPromo.code})` : ""}</span>
+            <span>− {formatINR(displayedDiscount)}</span>
+          </div>
+        )}
+
         <div className="billing-line muted">
           <span>
             Shipping
@@ -1077,10 +1323,8 @@ export default function Checkout() {
               "14px",
           }}
         >
-          Payment is not connected
-          yet. Placing this order
-          creates a pending-payment
-          order only.
+          Your promotion is revalidated securely when the order is created.
+          You will pay the remaining balance through Razorpay.
         </p>
 
         <button
