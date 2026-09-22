@@ -292,9 +292,31 @@ function buildStatusEmail({
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
+  let body: unknown;
 
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INVALID_JSON",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INVALID_REQUEST_BODY",
+      },
+      { status: 400 }
+    );
+  }
+
+  try {
     const {
       accessToken,
       orderId,
@@ -303,9 +325,9 @@ export async function POST(request: NextRequest) {
       note,
       trackingNumber,
       trackingUrl,
-    } = body;
+    } = body as Record<string, unknown>;
 
-    if (!accessToken) {
+    if (typeof accessToken !== "string" || !accessToken.trim()) {
       return NextResponse.json(
         {
           success: false,
@@ -315,7 +337,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!orderId) {
+    if (typeof orderId !== "string" || !orderId.trim()) {
       return NextResponse.json(
         {
           success: false,
@@ -325,7 +347,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!status) {
+    if (typeof status !== "string" || !status.trim()) {
       return NextResponse.json(
         {
           success: false,
@@ -457,8 +479,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            `ADMIN_PROFILE_LOOKUP_FAILED: ${adminProfileError.message}`,
+          error: "ADMIN_PROFILE_LOOKUP_FAILED",
         },
         { status: 500 }
       );
@@ -508,8 +529,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            `ORDER_LOOKUP_FAILED: ${orderError.message}`,
+          error: "ORDER_LOOKUP_FAILED",
         },
         { status: 404 }
       );
@@ -576,8 +596,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            `CUSTOMER_EMAIL_LOOKUP_FAILED: ${customerAuthError.message}`,
+          error: "CUSTOMER_EMAIL_LOOKUP_FAILED",
         },
         { status: 500 }
       );
@@ -704,9 +723,13 @@ export async function POST(request: NextRequest) {
     const html = buildStatusEmail({
       customerName,
       orderNumber:
-        order.order_number || orderNumber,
+        order.order_number ||
+        (typeof orderNumber === "string" ? orderNumber : ""),
       status,
-      note: note || null,
+      note:
+        typeof note === "string" && note.trim()
+          ? note.trim()
+          : null,
       trackingNumber: finalTrackingNumber,
       trackingUrl: finalTrackingUrl,
     });
@@ -755,10 +778,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "UNKNOWN_EMAIL_ROUTE_ERROR",
+        error: "ORDER_STATUS_EMAIL_ERROR",
       },
       { status: 500 }
     );
