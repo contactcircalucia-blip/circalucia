@@ -22,17 +22,43 @@ const ADMIN_EMAIL =
 const CUSTOMER_TEST_EMAIL = "contact.circalucia@gmail.com";
 
 export async function POST(request: NextRequest) {
+  let body: unknown;
+
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INVALID_JSON",
+      },
+      { status: 400 }
+    );
+  }
 
-    const {
-      requestId,
-      accessToken,
-    }: {
-      requestId?: string;
-      accessToken?: string;
-    } = body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INVALID_REQUEST_BODY",
+      },
+      { status: 400 }
+    );
+  }
 
+  const rawBody = body as Record<string, unknown>;
+
+  const requestId =
+    typeof rawBody.requestId === "string"
+      ? rawBody.requestId.trim()
+      : "";
+
+  const accessToken =
+    typeof rawBody.accessToken === "string"
+      ? rawBody.accessToken.trim()
+      : "";
+
+  try {
     if (!requestId || !accessToken) {
       return NextResponse.json(
         {
