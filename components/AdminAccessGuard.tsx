@@ -160,7 +160,7 @@ export default function AdminAccessGuard({
           src="/circa-lucia-loader.gif"
           alt="CIRCA LUCIA loading"
           style={{
-            width: "min(360px, 78vw)",
+            width: "min(220px, 55vw)",
             height: "auto",
             display: "block",
             objectFit: "contain",
