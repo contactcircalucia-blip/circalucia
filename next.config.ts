@@ -11,7 +11,8 @@ const contentSecurityPolicyReportOnly = `
     'self'
     'unsafe-inline'
     'unsafe-eval'
-    https://checkout.razorpay.com;
+    https://checkout.razorpay.com
+    https://cdn.razorpay.com;
 
   style-src
     'self'
@@ -40,7 +41,8 @@ const contentSecurityPolicyReportOnly = `
     wss://rewrlnavcpodcqtzvlfg.supabase.co
     https://nominatim.openstreetmap.org
     https://checkout.razorpay.com
-    https://api.razorpay.com;
+    https://api.razorpay.com
+    https://lumberjack.razorpay.com;
 
   frame-src
     'self'
