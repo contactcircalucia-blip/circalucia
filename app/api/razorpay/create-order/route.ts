@@ -14,19 +14,44 @@ function getBearerToken(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Parse untrusted JSON separately so malformed input is a 400,
+  // not an internal server error.
+  let body: unknown;
+
   try {
-    const { orderId } = await request.json();
-    const accessToken = getBearerToken(request);
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "INVALID_JSON" },
+      { status: 400 }
+    );
+  }
 
-    if (!orderId || !accessToken) {
-      return NextResponse.json(
-        { success: false, error: "Order ID and access token are required." },
-        { status: 400 }
-      );
-    }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json(
+      { success: false, error: "INVALID_REQUEST_BODY" },
+      { status: 400 }
+    );
+  }
 
+  const { orderId } = body as { orderId?: unknown };
+  const accessToken = getBearerToken(request);
+
+  if (
+    typeof orderId !== "string" ||
+    !orderId.trim() ||
+    !accessToken
+  ) {
+    return NextResponse.json(
+      { success: false, error: "Order ID and access token are required." },
+      { status: 400 }
+    );
+  }
+
+  try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    const publishableKey =
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
@@ -39,8 +64,12 @@ export async function POST(request: Request) {
       !keySecret
     ) {
       console.error("Missing server payment environment variables.");
+
       return NextResponse.json(
-        { success: false, error: "Payment server is not fully configured." },
+        {
+          success: false,
+          error: "Payment server is not fully configured.",
+        },
         { status: 500 }
       );
     }
@@ -75,12 +104,13 @@ export async function POST(request: Request) {
       .select(
         "id, order_number, user_id, status, payment_status, total_amount, currency, razorpay_order_id"
       )
-      .eq("id", orderId)
+      .eq("id", orderId.trim())
       .eq("user_id", user.id)
       .maybeSingle();
 
     if (orderError) {
       console.error("Order lookup error:", orderError);
+
       return NextResponse.json(
         { success: false, error: "Unable to load order." },
         { status: 500 }
@@ -119,7 +149,7 @@ export async function POST(request: Request) {
       },
     });
 
-    // If we already created a Razorpay order, verify and reuse it instead of
+    // If a Razorpay order already exists, verify and reuse it instead of
     // creating duplicates when the customer retries.
     if (order.razorpay_order_id) {
       const existingResponse = await fetch(
@@ -180,7 +210,11 @@ export async function POST(request: Request) {
     const razorpayOrder = await razorpayResponse.json();
 
     if (!razorpayResponse.ok || !razorpayOrder?.id) {
-      console.error("Razorpay order creation error:", razorpayOrder);
+      console.error(
+        "Razorpay order creation error:",
+        razorpayOrder
+      );
+
       return NextResponse.json(
         {
           success: false,
@@ -192,8 +226,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // IMPORTANT: use the server-only client here. The customer should never
-    // need an RLS policy that allows them to write payment identifiers.
+    // Use the server-only client here. Customers should never need an RLS
+    // policy allowing them to write payment identifiers directly.
     const { error: saveError } = await adminSupabase
       .from("orders")
       .update({
@@ -205,9 +239,16 @@ export async function POST(request: Request) {
       .neq("payment_status", "paid");
 
     if (saveError) {
-      console.error("Unable to save Razorpay order id:", saveError);
+      console.error(
+        "Unable to save Razorpay order id:",
+        saveError
+      );
+
       return NextResponse.json(
-        { success: false, error: "Unable to save payment order." },
+        {
+          success: false,
+          error: "Unable to save payment order.",
+        },
         { status: 500 }
       );
     }
@@ -221,12 +262,13 @@ export async function POST(request: Request) {
       orderNumber: order.order_number,
     });
   } catch (error) {
+    // Keep detailed information in server logs only.
     console.error("Create Razorpay order error:", error);
 
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: "PAYMENT_ORDER_ERROR",
       },
       { status: 500 }
     );
