@@ -5,7 +5,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLIC_KEY!;
+const supabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 async function fetchRazorpayPayment(paymentId: string) {
@@ -54,19 +55,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const accessToken = authorization.slice("Bearer ".length).trim();
+    const accessToken = authorization
+      .slice("Bearer ".length)
+      .trim();
 
-    const userSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
+    const userSupabase = createClient(
+      supabaseUrl,
+      supabaseAnonKey,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
         },
-      },
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    });
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
+    );
 
     const {
       data: { user },
@@ -83,7 +90,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     const orderId =
-      typeof body?.orderId === "string" ? body.orderId : null;
+      typeof body?.orderId === "string"
+        ? body.orderId
+        : null;
 
     const paymentId =
       typeof body?.razorpay_payment_id === "string"
@@ -102,24 +111,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const admin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    });
+    const admin = createClient(
+      supabaseUrl,
+      serviceRoleKey,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
+    );
 
-    const { data: order, error: orderError } = await admin
-      .from("orders")
-      .select(
-        "id, user_id, status, payment_status, razorpay_order_id, razorpay_payment_id"
-      )
-      .eq("id", orderId)
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const { data: order, error: orderError } =
+      await admin
+        .from("orders")
+        .select(
+          "id, user_id, status, payment_status, razorpay_order_id, razorpay_payment_id"
+        )
+        .eq("id", orderId)
+        .eq("user_id", user.id)
+        .maybeSingle();
 
     if (orderError) {
-      console.error("Failed-payment order lookup failed:", orderError);
+      console.error(
+        "Failed-payment order lookup failed:",
+        orderError
+      );
 
       return NextResponse.json(
         { error: "ORDER_LOOKUP_FAILED" },
@@ -152,7 +169,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const verifiedPayment = await fetchRazorpayPayment(paymentId);
+    const verifiedPayment =
+      await fetchRazorpayPayment(paymentId);
 
     if (
       verifiedPayment?.id !== paymentId ||
@@ -164,7 +182,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (String(verifiedPayment?.status || "").toLowerCase() !== "failed") {
+    if (
+      String(verifiedPayment?.status || "").toLowerCase() !==
+      "failed"
+    ) {
       return NextResponse.json(
         { error: "PAYMENT_IS_NOT_FAILED" },
         { status: 409 }
@@ -173,7 +194,10 @@ export async function POST(request: NextRequest) {
 
     const now = new Date().toISOString();
 
-    const { data: updatedOrder, error: updateError } = await admin
+    const {
+      data: updatedOrder,
+      error: updateError,
+    } = await admin
       .from("orders")
       .update({
         payment_status: "failed",
@@ -185,7 +209,10 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (updateError) {
-      console.error("Failed-payment status update failed:", updateError);
+      console.error(
+        "Failed-payment status update failed:",
+        updateError
+      );
 
       return NextResponse.json(
         { error: "PAYMENT_STATUS_UPDATE_FAILED" },
@@ -194,7 +221,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (!updatedOrder) {
-      const { data: latestOrder, error: latestError } = await admin
+      const {
+        data: latestOrder,
+        error: latestError,
+      } = await admin
         .from("orders")
         .select("id, status, payment_status")
         .eq("id", order.id)
