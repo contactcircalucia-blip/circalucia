@@ -2,41 +2,85 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendCircaLuciaEmail } from "@/lib/email";
 
+type AccountEventBody = {
+  accessToken?: unknown;
+  event?: unknown;
+};
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 export async function POST(request: Request) {
+  /*
+   * Parse JSON separately so malformed client input
+   * returns 400 instead of becoming an internal error.
+   */
+  let body: AccountEventBody;
+
   try {
-    const body = await request.json();
+    const parsed: unknown = await request.json();
 
-    const {
-      accessToken,
-      event,
-    }: {
-      accessToken?: string;
-      event?: "welcome" | "login";
-    } = body;
-
-    if (!accessToken) {
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
       return NextResponse.json(
         {
           success: false,
-          message: "Missing access token.",
-        },
-        { status: 401 }
-      );
-    }
-
-    if (event !== "welcome" && event !== "login") {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid account event.",
+          error: "INVALID_REQUEST_BODY",
         },
         { status: 400 }
       );
     }
 
+    body = parsed as AccountEventBody;
+  } catch {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INVALID_JSON",
+      },
+      { status: 400 }
+    );
+  }
+
+  const { accessToken, event } = body;
+
+  if (
+    typeof accessToken !== "string" ||
+    !accessToken.trim()
+  ) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "MISSING_ACCESS_TOKEN",
+      },
+      { status: 401 }
+    );
+  }
+
+  if (event !== "welcome" && event !== "login") {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INVALID_ACCOUNT_EVENT",
+      },
+      { status: 400 }
+    );
+  }
+
+  try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+      process.env
+        .NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
       {
         global: {
           headers: {
@@ -46,6 +90,9 @@ export async function POST(request: Request) {
       }
     );
 
+    /*
+     * Verify the access token against Supabase.
+     */
     const {
       data: { user },
       error: userError,
@@ -55,7 +102,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          message: "Unable to verify account.",
+          error: "AUTHENTICATION_REQUIRED",
         },
         { status: 401 }
       );
@@ -67,10 +114,22 @@ export async function POST(request: Request) {
       .eq("id", user.id)
       .single();
 
+    const rawCustomerName =
+      typeof profile?.full_name === "string" &&
+      profile.full_name.trim()
+        ? profile.full_name.trim()
+        : typeof user.user_metadata?.full_name ===
+              "string" &&
+            user.user_metadata.full_name.trim()
+          ? user.user_metadata.full_name.trim()
+          : "Client";
+
+    /*
+     * User/profile data is inserted into HTML email,
+     * so escape it before interpolation.
+     */
     const customerName =
-      profile?.full_name ||
-      user.user_metadata?.full_name ||
-      "Client";
+      escapeHtml(rawCustomerName);
 
     if (event === "welcome") {
       await sendCircaLuciaEmail({
@@ -104,7 +163,7 @@ export async function POST(request: Request) {
 
               <div style="text-align:center;margin:36px 0;">
                 <a
-                  href="http://localhost:3000/collection"
+                  href="https://circalucia.vercel.app/collection"
                   style="display:inline-block;padding:14px 26px;background:#141210;color:#faf8f4;text-decoration:none;font-size:13px;letter-spacing:1px;"
                 >
                   EXPLORE THE COLLECTION
@@ -130,7 +189,8 @@ export async function POST(request: Request) {
     if (event === "login") {
       await sendCircaLuciaEmail({
         to: "contact.circalucia@gmail.com",
-        subject: "New sign-in to your Circa Lucia account",
+        subject:
+          "New sign-in to your Circa Lucia account",
         html: `
           <div style="margin:0;padding:40px 20px;background:#f3eee6;font-family:Arial,sans-serif;color:#141210;">
             <div style="max-width:620px;margin:0 auto;background:#faf8f4;padding:48px 40px;">
@@ -174,6 +234,11 @@ export async function POST(request: Request) {
       event,
     });
   } catch (error) {
+    /*
+     * Keep the detailed error server-side only.
+     * Never expose provider/database/internal errors
+     * to the browser.
+     */
     console.error(
       "Account event email error:",
       error
@@ -182,10 +247,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to send account email.",
+        error: "ACCOUNT_EVENT_EMAIL_ERROR",
       },
       { status: 500 }
     );
