@@ -3,13 +3,42 @@ import { createClient } from "@supabase/supabase-js";
 import { sendCircaLuciaEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
+  let body: unknown;
+
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INVALID_JSON",
+      },
+      { status: 400 }
+    );
+  }
 
-    const orderId = body?.orderId;
-    const accessToken = body?.accessToken;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INVALID_REQUEST_BODY",
+      },
+      { status: 400 }
+    );
+  }
 
-    if (!orderId || !accessToken) {
+  try {
+    const { orderId, accessToken } = body as {
+      orderId?: unknown;
+      accessToken?: unknown;
+    };
+
+    if (
+      typeof orderId !== "string" ||
+      !orderId.trim() ||
+      typeof accessToken !== "string" ||
+      !accessToken.trim()
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -163,7 +192,7 @@ export async function POST(request: Request) {
             : "",
         ]
           .filter(Boolean)
-          .join(" · ");
+          .join(" Â· ");
 
         return `
           <tr>
@@ -197,7 +226,7 @@ export async function POST(request: Request) {
               border-bottom:1px solid #e5ded5;
               text-align:right;
             ">
-              ₹${Number(
+              â‚¹${Number(
                 item.unit_price
               ).toLocaleString("en-IN")}
             </td>
@@ -341,7 +370,7 @@ export async function POST(request: Request) {
               <span>Subtotal</span>
 
               <strong>
-                ₹${Number(
+                â‚¹${Number(
                   order.subtotal
                 ).toLocaleString("en-IN")}
               </strong>
@@ -361,7 +390,7 @@ export async function POST(request: Request) {
                   Number(
                     order.shipping_amount
                   ) > 0
-                    ? `₹${Number(
+                    ? `â‚¹${Number(
                         order.shipping_amount
                       ).toLocaleString("en-IN")}`
                     : "To be calculated"
@@ -379,7 +408,7 @@ export async function POST(request: Request) {
               <span>Tax</span>
 
               <span>
-                ₹${Number(
+                â‚¹${Number(
                   order.tax_amount || 0
                 ).toLocaleString("en-IN")}
               </span>
@@ -396,7 +425,7 @@ export async function POST(request: Request) {
               <strong>Total</strong>
 
               <strong>
-                ₹${Number(
+                â‚¹${Number(
                   order.total_amount
                 ).toLocaleString("en-IN")}
               </strong>
@@ -453,7 +482,7 @@ export async function POST(request: Request) {
      */
     await sendCircaLuciaEmail({
       to: "contact.circalucia@gmail.com",
-      subject: `Order confirmed — ${order.order_number}`,
+      subject: `Order confirmed â€” ${order.order_number}`,
       html: emailHtml,
     });
 
@@ -471,10 +500,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error",
+        error: "ORDER_CONFIRMATION_EMAIL_ERROR",
       },
       { status: 500 }
     );
